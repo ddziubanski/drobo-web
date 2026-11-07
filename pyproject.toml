@@ -18,7 +18,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest", "httpx"]
+test = ["pytest", "httpx", "pillow"]
+tray = ["pystray>=0.19", "pillow>=10"]
 
 [project.scripts]
 droboweb = "droboweb.__main__:main"

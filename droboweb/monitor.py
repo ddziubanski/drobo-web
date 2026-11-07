@@ -8,10 +8,11 @@ import time
 from .config import Config
 from .demo import DemoTransport, backfill
 from .discovery import find_drobo
+from . import usage as usage_mod
 from .events import Event, diff
 from .notify import Notifier
 from .protocol import Snapshot, read_snapshot
-from .scsi import DeviceTransport, ReplayTransport, Transport
+from .scsi import ReplayTransport, Transport, open_device
 from .store import Store
 
 log = logging.getLogger("droboweb.monitor")
@@ -36,6 +37,14 @@ class Monitor:
         self.failures = 0
         self._last_sample = 0.0
         self._last_prune = 0.0
+        self.listeners: list = []          # callables(event, unit) — e.g. the tray's notifications
+        self._pending: list[Event] = []    # events raised from the poll thread
+        # host-reported usage (the one write); injectable for tests
+        self.usage_provider = usage_mod.host_usage
+        self.dashboard_check = usage_mod.dashboard_service_running
+        self._last_usage = 0.0
+        self.usage = {"enabled": cfg.report_usage, "status": "off", "detail": "", "last_sent": None,
+                      "volumes": []}
 
     @property
     def mode(self) -> str:
@@ -56,7 +65,7 @@ class Monitor:
             if not path:
                 raise RuntimeError("no Drobo found: log in to the B800i over iSCSI first "
                                    "(see README), or set DROBOWEB_DEVICE=/dev/sgN")
-        return DeviceTransport(path)
+        return open_device(path)
 
     def _emit(self, events: list[Event]) -> None:
         unit = (self.snapshot.name if self.snapshot else "") or "Drobo"
@@ -64,12 +73,59 @@ class Monitor:
             log.info("%s %s: %s", ev.severity, ev.kind, ev.message)
             self.store.add_event(ev)
             self.notifier.send(ev, unit)
+            for fn in list(self.listeners):
+                try:
+                    fn(ev, unit)
+                except Exception:  # noqa: BLE001
+                    log.exception("listener failed")
 
     def poll_once(self) -> Snapshot:
         if self.transport is None:
             self.transport = self._open()
         snap = read_snapshot(self.transport)
+        self._report_usage(snap)
         return snap
+
+    def _set_usage(self, status: str, detail: str = "") -> None:
+        prev = self.usage["status"]
+        self.usage["status"], self.usage["detail"] = status, detail
+        if status != prev and status in ("blocked", "error"):
+            self._pending.append(Event("warning", "usage_report", f"Not reporting volume usage: {detail}"))
+        elif status != prev and status == "active" and prev in ("blocked", "error", "off", "waiting"):
+            self._pending.append(Event("info", "usage_report", "Reporting volume usage to the Drobo from this host"))
+
+    def _report_usage(self, snap: Snapshot) -> None:
+        """Send Dashboard's usage report, if enabled and safe. Runs in the poll thread."""
+        self.usage["enabled"] = self.cfg.report_usage
+        if not self.cfg.report_usage:
+            self.usage.update(status="off", detail="", volumes=[])
+            return
+        if time.time() - self._last_usage < self.cfg.usage_seconds:
+            return
+        self._last_usage = time.time()
+        if any(e.startswith("volumes") for e in snap.errors) or not snap.volumes:
+            self._set_usage("waiting", "The unit's volume list isn't available yet")
+            return
+        if self.dashboard_check():
+            self._set_usage("blocked", "Drobo Dashboard's service (DDService.exe) is running and already sends "
+                                       "this report. Stop the 'Drobo Dashboard Service' to let drobo-web take over.")
+            return
+        try:
+            host = self.usage_provider()
+        except Exception as e:  # noqa: BLE001
+            self._set_usage("error", f"Couldn't read this host's volume usage ({e})")
+            return
+        if not any(v.iqn.lower() in host for v in snap.volumes):
+            self._set_usage("blocked", "None of the Drobo's volumes are mounted on this host, so it isn't the "
+                                       "host that should report usage (that would mark every volume as unknown).")
+            return
+        try:
+            self.usage["volumes"] = usage_mod.send(self.transport, snap.volumes, host)
+        except Exception as e:  # noqa: BLE001
+            self._set_usage("error", f"The unit rejected the usage report ({e})")
+            return
+        self.usage["last_sent"] = time.time()
+        self._set_usage("active")
 
     def _handle(self, snap: Snapshot | None, err: Exception | None) -> None:
         self.polls += 1
@@ -83,6 +139,7 @@ class Monitor:
                 self.reachable = False
                 self._emit([Event("critical", "unreachable", f"Lost contact with the Drobo: {err}")])
             return
+        pending, self._pending = self._pending, []
         if self.cfg.demo and self.snapshot is None and not self.store.history(24 * 8, 10):
             backfill(self.store, snap)
         events = diff(self.snapshot, snap, self.cfg.temp_warn_c, self.cfg.capacity_warn_pct)
@@ -92,7 +149,7 @@ class Monitor:
         self.last_error = ""
         self.last_ok = snap.taken_at
         self.snapshot = snap
-        self._emit(events)
+        self._emit(events + pending)
         now = time.time()
         if now - self._last_sample >= self.cfg.sample_seconds:
             self.store.add_sample(snap)
@@ -123,5 +180,6 @@ class Monitor:
             "poll_seconds": self.cfg.poll_seconds,
             "polls": self.polls,
             "failures": self.failures,
+            "usage_report": self.usage,
             "thresholds": {"temp_warn_c": self.cfg.temp_warn_c, "capacity_warn_pct": self.cfg.capacity_warn_pct},
         }

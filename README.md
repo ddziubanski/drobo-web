@@ -23,9 +23,10 @@ shows the result in a browser, with history and alerts the original never had.
   started or finished; temperature and capacity thresholds; unit unreachable. Delivered by
   webhook (generic JSON, Discord, Slack, Teams, ntfy) and/or email.
 - **Prometheus** `/metrics` endpoint, plus a JSON API (`/api/docs`).
-- **Read-only by construction**: every SCSI command passes an allowlist (INQUIRY, MODE SENSE and the
-  vendor volume-list read). Writes are refused before they reach the kernel. It never
-  mounts or touches a volume.
+- **Read-only by default**: every SCSI command passes an allowlist (INQUIRY, MODE SENSE and the
+  vendor volume-list read). The one exception is the opt-in volume-usage report that
+  replaces Drobo Dashboard (see below). It never mounts or touches a volume.
+- **Windows tray app** (`DroboWeb.exe`) that replaces Drobo's DDAssist.
 - **No build step, no CDN**: it works on an isolated storage network.
 - **Demo mode** replays a real B800i capture, so you can try it without hardware.
 
@@ -42,7 +43,56 @@ droboweb serve --demo failing    # bay 3 fails after 2 minutes (DROBOWEB_DEMO_SP
 
 Or: `docker compose --profile demo up drobo-web-demo`, then go to http://localhost:8081.
 
-## Use it with a real B800i
+## Windows: tray app (replaces DDAssist)
+
+If your B800i is attached to a Windows machine, `DroboWeb.exe` replaces Drobo's DDAssist
+tray app:
+
+- The tray icon is coloured by health (green, amber, red, grey when unreachable). Hover it for
+  the unit's status and capacity.
+- Windows notifications for drive failures, redundancy loss, rebuilds, temperature,
+  capacity and lost contact.
+- Click the icon to open the full dashboard (served on `http://127.0.0.1:8780`, this PC only).
+- **Start when I log in**: a scheduled task that starts it elevated, without a UAC prompt each time.
+- **Report volume usage to the Drobo** (off by default): see below.
+
+**Install:** download `DroboWeb.exe` from [Releases](https://github.com/ddziubanski/drobo-web/releases),
+or the latest build from the
+[windows-build workflow](https://github.com/ddziubanski/drobo-web/actions/workflows/windows.yml)
+artifacts. Run it and accept the Administrator prompt: Windows only allows SCSI
+pass-through to elevated programs, the same reason Drobo Dashboard's service runs as
+SYSTEM. It finds the Drobo among your `PhysicalDrive`s by itself. Settings and the log
+are in `%APPDATA%\DroboWeb`.
+
+**Retire DDAssist:** Task Manager → Startup → disable "DDAssist". Exit it from its tray icon.
+
+**Troubleshooting:** `droboweb-cli.exe list` (from an Administrator prompt) shows which
+physical drives answer as a Drobo. `droboweb-cli.exe status` prints a one-shot status.
+`DroboWeb.exe --demo` runs the tray with simulated data.
+
+### Volume usage reporting (taking over from Drobo Dashboard)
+
+The B800i is thin-provisioned. It can't see how full each volume's filesystem is, so the
+host that has the volumes mounted tells it every few seconds. This is the **only write**
+Drobo Dashboard makes during normal running, and it's what feeds the Drobo's used/free figures.
+
+To uninstall Drobo Dashboard completely, turn on **Report volume usage to the Drobo** in
+the tray menu (or set `DROBOWEB_REPORT_USAGE=1`). drobo-web then sends the same report:
+
+- **Byte-for-byte Dashboard's format.** The tests rebuild the report captured from Dashboard and
+  compare the bytes. The only write the SCSI layer will pass is this exact command and payload shape.
+- **Usage comes from Windows**, mapping each iSCSI target to its disk and volumes
+  (`Get-IscsiSession` → `Get-Disk` → `Get-Volume`). Volumes that aren't mounted on this PC are
+  reported as 0, which the Drobo shows as "unknown", the same as Dashboard does.
+- **It pauses itself** (and says why in the dashboard) when:
+  - Drobo Dashboard's service (`DDService.exe`) is still running. Stop and disable
+    "Drobo Dashboard Service" first, so the two don't both report.
+  - None of the Drobo's volumes are mounted on this host. Otherwise a monitor-only machine would
+    mark every volume as unknown.
+
+On Linux it works the same way, using `/dev/disk/by-path` and the mounted filesystems.
+
+## Use it with a real B800i (Linux)
 
 ### 1. Get an iSCSI session to the unit (on the Linux host)
 
@@ -115,11 +165,13 @@ Environment variables (CLI flags override them where they exist):
 | `DROBOWEB_SMTP_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_STARTTLS`, `DROBOWEB_MAIL_FROM`, `DROBOWEB_MAIL_TO` | | email alerts |
 | `DROBOWEB_DEMO` / `DROBOWEB_DEMO_SPEED` | (empty) / `1` | `healthy` or `failing` |
 | `DROBOWEB_FIXTURE` | (empty) | replay a fixture file instead of real hardware |
+| `DROBOWEB_REPORT_USAGE` / `DROBOWEB_USAGE_SECONDS` | `false` / `30` | send the host's volume usage to the unit (replaces Drobo Dashboard) |
 
 ## CLI
 
 ```
 droboweb serve   [--device /dev/sgN | --demo [healthy|failing] | --fixture FILE] [--port N]
+droboweb tray    [--demo]          # tray icon + notifications (pip install "drobo-web[tray]")
 droboweb status  [--json] [same source options]
 droboweb list    [--all]          # which /dev/sg* devices are Drobos
 droboweb dump    [-o FILE] [--no-redact]   # raw responses, for bug reports and new fixtures
@@ -131,6 +183,8 @@ droboweb dump    [-o FILE] [--no-redact]   # raw responses, for bug reports and 
 |---|---|
 | ✅ | Read-only status: bays, lights, temperatures, capacity, volumes, ports, firmware, flags |
 | ✅ | History, alerts, Prometheus, demo mode |
+| ✅ | Windows tray app (DDAssist replacement); volume-usage report (Dashboard replacement), opt-in |
+| ⏳ | First run on real hardware (Windows pass-through and the usage report are built to the capture, not yet run against a unit) |
 | ⏳ | Confirm which iSCSI target Linux should use for management (needs a discovery listing) |
 | ⏳ | Map the unknown status bits and option flags |
 | 🔜 | Settings that Dashboard can change (rename, dimming, alert email, network). This needs captures of each write, and will be opt-in and off by default |

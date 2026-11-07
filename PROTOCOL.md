@@ -121,8 +121,19 @@ Dashboard sends this every cycle, telling the thin-provisioned unit how full eac
 volume's filesystem is. The values add up to the 3A/02 "used" figure. Payload:
 `2C 00 00 00 01 <count>`, then per volume `u8 index, u16 target_id, …, u64 used`.
 
-**drobo-web never sends this.** A monitor on a different host would overwrite the real host's numbers.
-It is the only write in a normal Dashboard session.
+Looking across all five reports in the capture, bytes 0–3 and everything after the last record change
+from one report to the next and contain fragments of other replies (drive model strings). They're
+uninitialised memory in Dashboard and the unit ignores them. The meaningful layout is:
+
+| Off | Type | Field |
+|---|---|---|
+| 4 | u8 | 0x01 |
+| 5 | u8 | record count |
+| 6 + 11·i | u8, u16, u64 | volume index, target id, used bytes (0 = not mounted here → unit shows unknown) |
+
+drobo-web sends this only when `report_usage` is turned on, with zeros in the junk bytes, and
+only if Dashboard's service isn't running and at least one Drobo volume is mounted on the host.
+It's the only write in a normal Dashboard session.
 
 ## Open questions
 

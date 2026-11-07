@@ -22,7 +22,7 @@ def _human(n: int | None) -> str:
 def _transport(args, cfg):
     from .demo import DemoTransport
     from .discovery import find_drobo
-    from .scsi import DeviceTransport, ReplayTransport
+    from .scsi import ReplayTransport, open_device
     if args.demo:
         return DemoTransport(args.fixture or None, args.demo)
     if args.fixture:
@@ -33,7 +33,7 @@ def _transport(args, cfg):
         if not dev:
             sys.exit("No Drobo found. Log in to the B800i over iSCSI first, or pass --device /dev/sgN.\n"
                      "Run `droboweb list` to see the SCSI devices this host can see.")
-    return DeviceTransport(dev)
+    return open_device(dev)
 
 
 def cmd_serve(args, cfg):
@@ -45,6 +45,11 @@ def cmd_serve(args, cfg):
         if v:
             setattr(cfg, k, v)
     uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port, log_level="info")
+
+
+def cmd_tray(args, cfg):
+    from .tray import main as tray_main
+    tray_main(demo=args.demo or "")
 
 
 def cmd_status(args, cfg):
@@ -69,6 +74,15 @@ def cmd_status(args, cfg):
 
 
 def cmd_list(args, cfg):
+    import os
+    if os.name == "nt":
+        from .winscsi import candidates as wc
+        from .discovery import probe
+        for c in wc():
+            ok = probe(c["path"]) if not c["error"] else None
+            print(f"{c['path']:22} {c['vendor']:8} {c['product']:16} "
+                  f"{'DROBO (protocol ' + ok + ')' if ok else c['error'] or 'not a Drobo'}")
+        return
     from .discovery import candidates, probe
     cands = candidates()
     if not cands:
@@ -116,6 +130,10 @@ def main(argv=None):
     p.add_argument("--port", type=int)
     p.add_argument("--db", dest="db_path")
     p.set_defaults(fn=cmd_serve)
+
+    p = sub.add_parser("tray", help="system-tray app with notifications (replaces Drobo's DDAssist)")
+    p.add_argument("--demo", nargs="?", const="failing", choices=["healthy", "failing"])
+    p.set_defaults(fn=cmd_tray)
 
     p = sub.add_parser("status", help="print the unit's status once")
     common(p)

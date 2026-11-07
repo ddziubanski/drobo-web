@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .protocol import subpage
-from .scsi import DeviceTransport
+from .scsi import open_device
 
 SYS_SG = Path("/sys/class/scsi_generic")
 VENDOR_HINTS = ("drobo", "trusted", "datarobo")
@@ -52,7 +52,7 @@ def candidates(root: Path = SYS_SG) -> list[Candidate]:
 def probe(path: str) -> str | None:
     """Returns the protocol version string if the device answers the Drobo vendor page."""
     try:
-        t = DeviceTransport(path, timeout_ms=5000)
+        t = open_device(path)
     except OSError:
         return None
     try:
@@ -65,6 +65,9 @@ def probe(path: str) -> str | None:
 
 
 def find_drobo() -> str | None:
+    if os.name == "nt":
+        from .winscsi import find_drobo as win_find
+        return win_find()
     cands = candidates()
     # Likely Drobo devices first, then anything else attached over iSCSI.
     ordered = [c for c in cands if c.likely] + [c for c in cands if not c.likely and c.iscsi_target]

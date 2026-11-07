@@ -114,6 +114,17 @@
     }).join("") : `<tr><td colspan="5" class="muted">No volumes reported.</td></tr>`;
   }
 
+  function renderUsage(u) {
+    if (!u.enabled) return;
+    const cls = { active: "ok", blocked: "warning", error: "warning" }[u.status] || "info";
+    const head = { active: "Reporting volume usage", blocked: "Usage reporting paused", error: "Usage reporting failed" }[u.status] || "Usage reporting waiting";
+    const sub = u.status === "active"
+      ? `This host tells the Drobo how full its volumes are (replacing Drobo Dashboard). Last sent ${esc(ago(u.last_sent))}.`
+      : esc(u.detail || "");
+    $("status-body").insertAdjacentHTML("beforeend", `<div class="status-line ${cls}"><span class="dot"></span><div><b>${head}</b><span class="muted">${sub}</span></div></div>`);
+    if (u.status === "active") $("vol-summary").textContent += " · usage reported by this host";
+  }
+
   function renderPorts(s) {
     const ports = s.ports || [];
     $("ports").innerHTML = ports.length ? ports.map((p) => `<div class="port"><span class="p">${p.port}</span><span class="ip">${esc(p.ip)}/${p.prefix}</span>
@@ -158,6 +169,7 @@
     $("unit-sub").textContent = `B800i · firmware ${s.firmware} · ${s.source}`;
     $("updated").textContent = "updated " + ago(m.last_ok);
     renderBays(s); renderCapacity(s); renderStatus(s); renderVolumes(s); renderPorts(s); renderUnit(s);
+    renderUsage(m.usage_report || {});
   }
 
   function renderEvents(list) {

@@ -40,6 +40,8 @@ class Config:
     mail_from: str = ""
     mail_to: str = ""
     notify_min_severity: str = "warning"  # info | warning | critical
+    report_usage: bool = False      # take over Dashboard's volume-usage report (the one write)
+    usage_seconds: float = 30.0     # how often to send it when enabled
     extra: dict = field(default_factory=dict)
 
     @classmethod

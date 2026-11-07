@@ -1,0 +1,76 @@
+name: windows-build
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[tray,test]" pyinstaller
+
+      - name: Unit tests (Windows)
+        run: pytest -q
+
+      - name: Icon
+        run: python -c "from droboweb.tray import make_icon; make_icon('ok', 256).save('DroboWeb.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(256,256)])"
+
+      - name: Build DroboWeb.exe (tray) and droboweb-cli.exe (console)
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --uac-admin --name DroboWeb --icon DroboWeb.ico `
+            --collect-data droboweb --collect-submodules uvicorn --hidden-import pystray._win32 `
+            packaging/windows/DroboWeb.py
+          pyinstaller --noconfirm --onefile --console --uac-admin --name droboweb-cli --icon DroboWeb.ico `
+            --collect-data droboweb --collect-submodules uvicorn `
+            packaging/windows/droboweb-cli.py
+
+      - name: Smoke test CLI (demo data)
+        run: |
+          dist\droboweb-cli.exe status --demo
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Smoke test tray app server (demo data)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\DroboWeb.exe -ArgumentList "--demo" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $r = Invoke-RestMethod http://127.0.0.1:8780/api/status
+              if ($r.snapshot.health) { $ok = $true; break }
+            } catch { }
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Get-Content "$env:APPDATA\DroboWeb\droboweb.log" -ErrorAction SilentlyContinue | Select-Object -Last 30
+          if (-not $ok) { Write-Error "tray app did not serve /api/status"; exit 1 }
+          Write-Host "tray app OK: health = $($r.snapshot.health)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DroboWeb-windows
+          path: |
+            dist/DroboWeb.exe
+            dist/droboweb-cli.exe
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/DroboWeb.exe
+            dist/droboweb-cli.exe
