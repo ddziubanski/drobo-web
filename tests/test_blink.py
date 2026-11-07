@@ -53,13 +53,13 @@ def test_monitor_blink_counts_up_and_logs():
     assert mon.transport.writes[-1][0][4] == 1  # wraps, skipping 0
 
 
-def test_refused_blink_mentions_admin_password():
+def test_refused_blink_says_so():
     _, mon, _ = make()
 
     def refuse(cdb, data):
         raise RuntimeError("CHECK CONDITION")
     mon.transport.write = refuse
-    with pytest.raises(RuntimeError, match="admin password"):
+    with pytest.raises(RuntimeError, match="didn't accept Blink Lights"):
         mon.blink()
 
 
@@ -94,7 +94,7 @@ def test_api_blink_reports_refusal():
         raise RuntimeError("CHECK CONDITION")
     mon.transport.write = refuse
     r = c.post("/api/blink", json={})
-    assert r.status_code == 502 and "admin password" in r.json()["detail"]
+    assert r.status_code == 502 and "didn't accept Blink Lights" in r.json()["detail"]
 
 
 def test_tray_menu_has_blink(tmp_path, monkeypatch):

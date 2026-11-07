@@ -106,9 +106,7 @@ class Monitor:
             try:
                 self.transport.write(blink_cdb(self._blink_seq), BLINK_DATA)
             except Exception as e:  # noqa: BLE001
-                raise RuntimeError(f"The Drobo refused Blink Lights ({e}). If an admin password is set on "
-                                   "the Drobo, turn it off in Drobo Dashboard: drobo-web can't send the "
-                                   "password yet.") from e
+                raise RuntimeError(f"The Drobo didn't accept Blink Lights ({e}).") from e
         self._pending.append(Event("info", "blink", "Blink Lights sent from drobo-web"))
 
     def _poll_locked(self) -> Snapshot:

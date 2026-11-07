@@ -146,16 +146,16 @@ Dashboard's **Blink Lights** button (flashes the front panel to identify the uni
 `<seq>` goes up by one per command (`8B`, `8C`, `8D`, `8E` in the capture), so it's probably a
 transaction counter. Four presses of the same button carried `4B`, `32`, `32`, `00` (75, 50, 50, 0),
 so the byte doesn't select anything: it's either unfilled memory, like the junk bytes in the usage
-report, or a blink duration in seconds. None of the pages drobo-web reads change. The capture had
-an admin password set, and Dashboard had authenticated with 3A/14 earlier in the session; whether
-Blink Lights needs that isn't known.
+report, or a blink duration in seconds. **Confirmed on a B800i (firmware 3.45): a zero data byte
+blinks the lights, and it works with an admin password set without authenticating (3A/14) first.**
 
 **While the lights blink (about 10 s per press) the bay records change:** every bay reports
 light `0x05` (flashing red/yellow) and every empty bay `0x85` (0x80 "empty" plus 0x05), while the
 3A/09 status flags stay as they were. Read naively, that looks like every drive failing at once.
 drobo-web treats "all bays 0x05, no red/yellow alert, bad disk or missing-disk bit" as Blink Lights
 (whoever pressed it), keeps each drive's last real light, and raises no alerts. In the capture
-this matched all 110 bay reads taken during a blink and none of the 166 others.
+this matched all 110 bay reads taken during a blink and none of the 166 others, and it was
+confirmed on the unit: the dashboard stayed healthy while the lights blinked.
 
 drobo-web sends exactly this command, with its own counter starting at 1 and a zero data byte
 (the value Dashboard's last press sent), only when someone presses its Blink Lights button.
@@ -208,11 +208,11 @@ It's the only write in a normal Dashboard session.
    create/delete/resize.
    Capture Dashboard while making one change at a time. (Network config, admin password, clock
    and Blink Lights are mapped above.)
-3. **The admin password**: how the 3A/12 payload encodes it, and whether other writes are
-   refused once a password is set but the session hasn't authenticated with 3A/14.
+3. **The admin password**: how the 3A/12 payload encodes it, and which writes are refused once a
+   password is set but the session hasn't authenticated with 3A/14 (Blink Lights isn't).
 4. Bytes 68 (bay record) and 0x107/0x119 (volume record), and status bits 0x8000/0x10000.
 5. Which other subcommands the 0xEA command takes (0x81 volume list and 0x06 Blink Lights are known),
-   and what Blink Lights' data byte does.
+   and whether Blink Lights' data byte does anything (0 works).
 
 Captures from other models (B810i, B1200i, DroboPro, DroboElite) are very welcome. Use
 `tools/pcap_to_fixture.py`, or `droboweb dump` on Linux. Both redact by default.

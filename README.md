@@ -105,8 +105,9 @@ the tray menu (or set `DROBOWEB_REPORT_USAGE=1`). drobo-web then sends the same 
   - None of the Drobo's volumes are mounted on this host. Otherwise a monitor-only machine would
     mark every volume as unknown.
 - **Admin password:** drobo-web can't send the Drobo's admin password yet. Reading status works
-  with a password set. If the dashboard says the unit rejected the usage report or Blink Lights,
-  turn the admin password off in Drobo Dashboard (Drobo Settings), then try again.
+  with a password set. If the dashboard says the unit rejected the usage report, turn the admin
+  password off in Drobo Dashboard (Drobo Settings), then try again. Blink Lights works with a
+  password set.
 
 On Linux it works the same way, using `/dev/disk/by-path` and the mounted filesystems.
 
