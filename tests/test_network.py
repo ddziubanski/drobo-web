@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -78,6 +80,7 @@ def test_allowlist_rejects_malformed_pages(mutate):
         _check_write_allowed(NET_CDB, mutate(DASHBOARD_WRITE))
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Linux sysfs names contain ':', which Windows can't create")
 def test_linux_connections(tmp_path):
     s = tmp_path / "iscsi_session" / "session3"
     s.mkdir(parents=True)
