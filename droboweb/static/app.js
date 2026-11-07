@@ -155,6 +155,7 @@
     $("ver").textContent = "v" + data.version;
     $("mode-badge").hidden = m.mode !== "demo";
     $("blink-btn").hidden = !(data.actions && data.actions.blink);
+    $("net-edit-btn").hidden = !(data.actions && data.actions.network) || !$("netform").hidden;
     const banner = $("banner");
     if (!m.reachable) {
       banner.hidden = false;
@@ -242,6 +243,92 @@
       loadHistory();
     };
   }
+
+  // ---------- port network settings ----------
+  const NET_FIELDS = [["ip", "IP address"], ["netmask", "Subnet mask"], ["gateway", "Gateway"], ["mtu", "MTU"]];
+  let net = null, netPort = 0;
+  const netForm = $("netform");
+
+  function netClose(message, cls) {
+    netForm.hidden = true; net = null;
+    $("net-edit-btn").hidden = false;
+    if (message) { const p = document.createElement("p"); p.className = "net-result " + cls; p.textContent = message; $("ports").after(p); setTimeout(() => p.remove(), 20000); }
+  }
+
+  function netEditView(errors = {}, values = null) {
+    const inUse = new Set(net.in_use || []);
+    const cur = net.ports[netPort], v = values || cur;
+    const locked = inUse.has(cur.ip);
+    netForm.innerHTML = `
+      <div class="seg" role="tablist">${net.ports.map((p, i) => `<button type="button" data-port="${i}" class="${i === netPort ? "on" : ""}">Port ${i + 1}</button>`).join("")}</div>
+      ${locked ? `<p class="net-note bad">This computer connects to the Drobo through port ${netPort + 1} (${esc(cur.ip)}). drobo-web won't change it, because that could cut off the volumes mounted here. Use a computer that connects through the other port.</p>` : ""}
+      ${net.in_use === null ? `<p class="net-note">drobo-web couldn't check which port this computer uses. Make sure it isn't the one you change.</p>` : ""}
+      <div class="net-grid">${NET_FIELDS.map(([k, label]) => `<label>${label}<input name="${k}" value="${esc(v[k])}" ${k === "mtu" ? 'inputmode="numeric"' : 'inputmode="decimal"'} spellcheck="false"${locked ? " disabled" : ""}>${errors[k] ? `<span class="err">${esc(label)} ${esc(errors[k])}.</span>` : ""}</label>`).join("")}</div>
+      ${errors.port ? `<p class="net-note bad">${esc(errors.port)}</p>` : ""}
+      <div class="net-btns"><button type="button" class="btn" data-act="cancel">Cancel</button><button type="button" class="btn primary" data-act="review"${locked ? " disabled" : ""}>Review change</button></div>`;
+  }
+
+  function netValues() {
+    const o = {};
+    for (const [k] of NET_FIELDS) { const el = netForm.querySelector(`[name=${k}]`); o[k] = k === "mtu" ? (/^\d+$/.test(el.value.trim()) ? +el.value.trim() : el.value.trim()) : el.value.trim(); }
+    return o;
+  }
+
+  function netReview(values) {
+    const cur = net.ports[netPort];
+    const diff = NET_FIELDS.filter(([k]) => String(values[k]) !== String(cur[k]));
+    if (!diff.length) { netEditView({ port: "Nothing has changed." }, values); return; }
+    const addr = diff.some(([k]) => k !== "mtu");
+    netForm.innerHTML = `
+      <p><b>Change port ${netPort + 1} on the Drobo:</b></p>
+      <ul class="net-diff">${diff.map(([k, label]) => `<li>${label}: <span class="mono">${esc(cur[k])}</span> → <span class="mono">${esc(values[k])}</span></li>`).join("")}</ul>
+      ${addr ? `<p class="net-note bad">Everything that connects through ${esc(cur.ip)} loses its connection. Each host will need its iSCSI initiator pointed at the new address.</p>` : ""}
+      ${diff.some(([k]) => k === "mtu") ? `<p class="net-note">The switch and every host on this port must use a matching MTU, or transfers can stall.</p>` : ""}
+      <label class="net-ack"><input type="checkbox" id="net-ack"> I've checked these settings</label>
+      <div class="net-btns"><button type="button" class="btn" data-act="back">Back</button><button type="button" class="btn danger" data-act="apply" disabled>Apply to the Drobo</button></div>`;
+    netForm.dataset.values = JSON.stringify(values);
+  }
+
+  $("net-edit-btn").onclick = async () => {
+    $("net-edit-btn").disabled = true;
+    try {
+      const r = await fetch("api/unit/network", { cache: "no-store" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.detail || r.status);
+      net = j; netPort = 0;
+      const inUse = new Set(net.in_use || []);
+      const free = net.ports.findIndex((p) => !inUse.has(p.ip));
+      if (free >= 0) netPort = free;
+      netForm.hidden = false; $("net-edit-btn").hidden = true;
+      netEditView();
+    } catch (e) { netClose(`Couldn't load the port settings: ${e.message}`, "bad"); }
+    $("net-edit-btn").disabled = false;
+  };
+
+  netForm.addEventListener("change", (e) => { if (e.target.id === "net-ack") netForm.querySelector("[data-act=apply]").disabled = !e.target.checked; });
+  netForm.addEventListener("click", async (e) => {
+    const tab = e.target.closest("[data-port]");
+    if (tab) { netPort = +tab.dataset.port; netEditView(); return; }
+    const act = e.target.closest("[data-act]");
+    if (!act) return;
+    if (act.dataset.act === "cancel") return netClose();
+    if (act.dataset.act === "review") return netReview(netValues());
+    if (act.dataset.act === "back") return netEditView({}, JSON.parse(netForm.dataset.values));
+    if (act.dataset.act === "apply") {
+      const values = JSON.parse(netForm.dataset.values);
+      act.disabled = true; act.textContent = "Applying…";
+      let r, j = {};
+      try {
+        r = await fetch("api/unit/network", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ port: netPort + 1, ...values, expected: net.ports, confirm: true }) });
+        j = await r.json().catch(() => ({}));
+      } catch (err) { return netClose(`Not sent: ${err.message}`, "bad"); }
+      if (r.status === 422) return netEditView(j.errors || {}, values);
+      if (!r.ok) return netClose(j.detail || `Not changed (error ${r.status}).`, "bad");
+      netClose(`Port ${j.port}: ${j.detail}`, j.verified === false ? "bad" : "good");
+      loadStatus(); loadEvents();
+    }
+  });
 
   // ---------- Blink Lights ----------
   let blinkTimer;

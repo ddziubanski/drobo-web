@@ -30,14 +30,17 @@ shows the result in a browser, with history and alerts the original never had.
   webhook (generic JSON, Discord, Slack, Teams, ntfy) and/or email.
 - **Blink Lights**: a button on the dashboard (and in the tray menu) that flashes the front
   panel to find the unit in a rack, the same command Drobo Dashboard sends.
+- **Port network settings** (opt-in): change a port's IP address, subnet mask, gateway or MTU
+  from the iSCSI ports card, the way Drobo Dashboard does. One port at a time, with a review
+  step, and never the port this computer is connected through.
 - **Settings page**: alert email and webhooks (with a "send test alert" button), alert
   thresholds, polling, history retention, login, and usage reporting. Changes apply
   without a restart.
 - **Prometheus** `/metrics` endpoint, plus a JSON API (`/api/docs`).
 - **Read-only by default**: every SCSI command passes an allowlist (INQUIRY, MODE SENSE and the
   vendor volume-list read). The only writes it can send are the opt-in volume-usage report that
-  replaces Drobo Dashboard (see below) and Blink Lights, each in the exact shape Dashboard
-  uses. It never mounts or touches a volume.
+  replaces Drobo Dashboard (see below), Blink Lights, and the opt-in port network settings, each
+  in the exact shape Dashboard uses. It never mounts or touches a volume.
 - **Windows tray app** (`DroboWeb.exe`) that replaces Drobo's DDAssist.
 - **No build step, no CDN**: it works on an isolated storage network.
 - **Demo mode** replays a real B800i capture, so you can try it without hardware.
@@ -84,6 +87,24 @@ are in `%APPDATA%\DroboWeb`.
 **Troubleshooting:** `droboweb-cli.exe list` (from an Administrator prompt) shows which
 physical drives answer as a Drobo. `droboweb-cli.exe status` prints a one-shot status.
 `DroboWeb.exe --demo` runs the tray with simulated data.
+
+### Changing the iSCSI port settings
+
+Turn on **Allow changing port network settings** in Settings (or set
+`DROBOWEB_NETWORK_EDIT=1`), then use **Edit** on the dashboard's iSCSI ports card. drobo-web
+reads the unit's network page fresh and writes it back with one port's IP address, subnet mask,
+gateway or MTU changed, the same write Drobo Dashboard makes. Then it reads the page again to
+check the unit kept it.
+
+A wrong value cuts off everything that connects through that port, so:
+
+- **One port per change.** You can always fix a mistake through the other port.
+- **It won't change the port this computer connects through** (it checks this computer's iSCSI
+  sessions). Make the change from a host that uses the other port.
+- **You review the exact change** before it's sent, and it's refused if the unit's settings
+  changed since the page loaded.
+- After changing an address, point each host's iSCSI initiator at the new one.
+- Every change is logged as a warning event, so it's also sent to your alert channels.
 
 ### Volume usage reporting (taking over from Drobo Dashboard)
 
@@ -201,6 +222,8 @@ Environment variables:
 | `DROBOWEB_SMTP_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_STARTTLS`, `DROBOWEB_MAIL_FROM`, `DROBOWEB_MAIL_TO` | | email alerts |
 | `DROBOWEB_DEMO` / `DROBOWEB_DEMO_SPEED` | (empty) / `1` | `healthy` or `failing` |
 | `DROBOWEB_FIXTURE` | (empty) | replay a fixture file instead of real hardware |
+| `DROBOWEB_BLINK_BUTTON` | `true` | show the Blink Lights button |
+| `DROBOWEB_NETWORK_EDIT` | `false` | allow changing the unit's port network settings |
 | `DROBOWEB_REPORT_USAGE` / `DROBOWEB_USAGE_SECONDS` | `false` / `30` | send the host's volume usage to the unit (replaces Drobo Dashboard) |
 
 ## CLI
@@ -222,11 +245,12 @@ droboweb dump    [-o FILE] [--no-redact]   # raw responses, for bug reports and 
 | ✅ | Windows tray app (DDAssist replacement); volume-usage report (Dashboard replacement), opt-in |
 | ✅ | Settings page for drobo-web's own settings (alerts, thresholds, polling, login) |
 | ✅ | Blink Lights (identify the unit) |
+| ✅ | Port network settings (IP, subnet mask, gateway, MTU), opt-in |
 | ⏳ | First run on real hardware (Windows pass-through and the usage report are built to the capture, not yet run against a unit) |
 | ⏳ | Confirm which iSCSI target Linux should use for management (needs a discovery listing) |
 | ⏳ | Map the unknown status bits and option flags |
 | 📝 | **To do: Rename Drobo.** Almost certainly the 3A/05 write (see PROTOCOL.md). Needs one capture of Drobo Dashboard sending a new name, then a "Drobo name" field, opt-in |
-| 🔜 | Other unit settings Dashboard can change (network, admin password). Both are mapped in PROTOCOL.md; they will be opt-in and off by default |
+| 🔜 | Admin password support, so writes work when the unit asks for it (mapped in PROTOCOL.md; the password encoding needs more captures) |
 | 🔜 | Other models (B810i, B1200i, DroboPro, DroboElite): send a capture or a `droboweb dump` |
 
 The protocol notes are in [PROTOCOL.md](PROTOCOL.md).

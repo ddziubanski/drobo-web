@@ -45,6 +45,7 @@ class Config:
     report_usage: bool = False      # take over Dashboard's volume-usage report (the one write)
     usage_seconds: float = 30.0     # how often to send it when enabled
     blink_button: bool = True       # show the Blink Lights button (flashes the front panel)
+    network_edit: bool = False      # allow changing the unit's iSCSI port settings (opt-in)
     extra: dict = field(default_factory=dict)
 
     @classmethod

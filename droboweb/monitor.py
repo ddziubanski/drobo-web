@@ -13,10 +13,16 @@ from . import usage as usage_mod
 from .events import Event, diff
 from .notify import Notifier
 from .protocol import Snapshot, read_snapshot
-from .scsi import BLINK_DATA, ReplayTransport, Transport, blink_cdb, open_device
+from . import netconfig
+from .protocol import parse_network, subpage
+from .scsi import BLINK_DATA, NET_CDB, ReplayTransport, Transport, blink_cdb, open_device
 from .store import Store
 
 log = logging.getLogger("droboweb.monitor")
+
+
+class NetConflict(RuntimeError):
+    """A network change that isn't safe to send right now."""
 
 
 class Monitor:
@@ -108,6 +114,61 @@ class Monitor:
             except Exception as e:  # noqa: BLE001
                 raise RuntimeError(f"The Drobo didn't accept Blink Lights ({e}).") from e
         self._pending.append(Event("info", "blink", "Blink Lights sent from drobo-web"))
+
+    def network_ports(self) -> list[netconfig.PortConfig]:
+        """The port settings as the unit reports them right now."""
+        with self._io:
+            if self.transport is None:
+                self.transport = self._open()
+            return netconfig.read_records(subpage(self.transport, 0x31))
+
+    def set_network(self, port: int, new: dict, expected: list[dict]) -> dict:
+        """Change one port's IP, netmask, gateway and MTU, like Drobo Dashboard. Raises
+        netconfig.NetError for bad values, NetConflict when it isn't safe, RuntimeError if the
+        unit doesn't take it."""
+        snap_ips = [p.ip for p in self.snapshot.ports] if self.snapshot else []
+        in_use = netconfig.ports_in_use(snap_ips) if snap_ips else None
+        with self._io:
+            if self.transport is None:
+                self.transport = self._open()
+            payload = subpage(self.transport, 0x31)
+            current = netconfig.read_records(payload)
+            if [c.as_dict() for c in current] != expected:
+                raise NetConflict("The Drobo's port settings changed since this page loaded. "
+                                  "Reload and check them before trying again.")
+            cfg = netconfig.validate(port, new, current)
+            before = current[port - 1]
+            if cfg == before:
+                return {"port": port, "changed": [], "before": before.as_dict(), "after": cfg.as_dict(),
+                        "verified": True, "detail": "Nothing to change."}
+            if in_use and before.ip in in_use:
+                raise NetConflict(f"This computer is connected to the Drobo through port {port} ({before.ip}). "
+                                  "Changing it could cut off the volumes it has mounted. Change it from a "
+                                  "computer that connects through the other port, or move this computer's "
+                                  "iSCSI sessions to the other port first.")
+            data = netconfig.build_write(payload, port, cfg)
+            try:
+                self.transport.write(NET_CDB, data)
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError(f"The Drobo didn't accept the change ({e}). If an admin password is set, "
+                                   "the unit may want it first, and drobo-web can't send it yet: turn the "
+                                   "password off in Drobo Dashboard and try again.") from e
+            changed = [k for k in ("ip", "netmask", "gateway", "mtu") if getattr(cfg, k) != getattr(before, k)]
+            try:
+                page = subpage(self.transport, 0x31)
+                after = netconfig.read_records(page)
+                verified = len(after) >= port and after[port - 1] == cfg
+                if self.snapshot is not None:
+                    self.snapshot.ports = parse_network(page)  # show it now, not at the next poll
+                detail = ("The Drobo reports the new settings." if verified else
+                          "The Drobo accepted the write but still reports different settings.")
+            except Exception as e:  # noqa: BLE001
+                verified, detail = None, (f"Sent, but the Drobo couldn't be read back ({e}). That's expected if "
+                                          "this connection went through the changed port.")
+        what = ", ".join(f"{k} {getattr(before, k)} → {getattr(cfg, k)}" for k in changed)
+        self._pending.append(Event("warning", "network_change", f"Port {port} changed from drobo-web: {what}"))
+        return {"port": port, "changed": changed, "before": before.as_dict(), "after": cfg.as_dict(),
+                "verified": verified, "detail": detail, "in_use_known": in_use is not None}
 
     def _poll_locked(self) -> Snapshot:
         if self._reopen:

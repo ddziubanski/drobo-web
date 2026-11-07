@@ -13,7 +13,7 @@ import struct
 import time
 from importlib import resources
 
-from .scsi import BLINK_PREFIX, ReplayTransport
+from .scsi import BLINK_PREFIX, NET_CDB, ReplayTransport
 
 DEFAULT_FIXTURE = resources.files("droboweb") / "fixtures" / "b800i-fw3.45.json"
 
@@ -31,6 +31,9 @@ class DemoTransport(ReplayTransport):
         super().write(cdb, data)
         if bytes(cdb[:4]) == BLINK_PREFIX:
             self.blink_until = time.time() + 10  # a real B800i flashes for about 10 s
+        elif bytes(cdb) == NET_CDB:
+            # the unit takes the new page; reads return it with the read-side header
+            self.responses["3a31"] = self.responses["3a31"][:4] + bytes(data[4:])
 
     def _t(self) -> float:
         return (time.time() - self.t0) * self.speed

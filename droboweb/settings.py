@@ -98,6 +98,11 @@ FIELDS: tuple[Field, ...] = (
     Field("blink_button", "Blink Lights button", "unit", "bool",
           help="Show a button on the dashboard (and in the tray menu) that flashes the Drobo's front "
                "panel, to find it in a rack. The button needs the same access as changing settings."),
+    Field("network_edit", "Allow changing port network settings", "unit", "bool",
+          help="Adds an Edit button to the iSCSI ports card, to change a port's IP address, subnet mask, "
+               "gateway or MTU the way Drobo Dashboard does. A wrong value can cut off everything that "
+               "connects through that port, so drobo-web changes one port at a time and won't change a "
+               "port this computer is connected through."),
     Field("auth_user", "User name", "access", help="Leave empty for no login."),
     Field("auth_password", "Password", "access", "password"),
 )

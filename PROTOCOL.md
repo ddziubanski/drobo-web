@@ -117,6 +117,11 @@ one 14-byte record per port, zero-filled to 512 bytes. Confirmed by changing por
 from 9000 to 8999: the write carried `… 23 27` in port 1's MTU field, and the next read
 returned 8999. Changing IP, netmask or gateway is presumed to work the same way, but isn't captured.
 
+drobo-web sends this write (opt-in) from a fresh read of the page, changing one port's record, and
+its tests rebuild Dashboard's captured write byte for byte. Dashboard had authenticated with the
+admin password (3A/14) earlier in that session, so whether the unit takes this write without
+that is untested.
+
 ### MODE SELECT 3A/12 and 3A/14: admin password (write)
 Changing the admin password in Dashboard sent **the same 520-byte payload to 3A/12 and then
 3A/14**, 70 ms apart (only the subpage byte in the header differs). The likely reading is

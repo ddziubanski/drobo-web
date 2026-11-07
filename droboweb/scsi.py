@@ -7,7 +7,10 @@ Every command is checked against an allowlist before it reaches the OS:
   - the "host-reported volume usage" MODE SELECT(10) to vendor subpage 0x3A/0x0C. It is only
     sent when the user turns usage reporting on (see usage.py);
   - Blink Lights (vendor 0xEA, subcommand 0x06, one zero data byte), which only flashes the
-    front panel. It is only sent when someone presses the Blink Lights button.
+    front panel. It is only sent when someone presses the Blink Lights button;
+  - the network page, MODE SELECT(10) to 0x3A/0x31 (512 bytes), which changes a port's IP,
+    netmask, gateway or MTU. It is only sent when network editing is turned on in Settings and
+    someone confirms a change (see netconfig.py).
 
 DeviceTransport talks to a Linux SCSI generic device (/dev/sgN) with SG_IO.
 WinDeviceTransport (winscsi.py) does the same on Windows with SCSI pass-through.
@@ -17,6 +20,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import struct
 from pathlib import Path
 
 SG_IO = 0x2285
@@ -31,6 +35,29 @@ USAGE_MAX_RECORDS = (USAGE_LEN - 6) // USAGE_REC  # 7
 
 BLINK_PREFIX = bytes([0xEA, 0x10, 0x00, 0x06])
 BLINK_DATA = b"\x00"
+
+
+NET_CDB = bytes([0x55, 0x01, 0x3A, 0x31, 0, 0, 0, 0x02, 0x00, 0])
+NET_LEN = 0x200
+NET_HEADER = bytes([0x7A, 0x31, 0x01, 0xFC])
+NET_REC_OFF = 14   # first port record, from the start of the parameter list
+NET_REC = 14
+
+
+def _check_network_payload(data: bytes) -> None:
+    if len(data) != NET_LEN or data[:4] != NET_HEADER:
+        raise NotAllowed("network page write has the wrong length or header")
+    if any(data[4:11]) or data[12:14] != b"\x00\x0e":
+        raise NotAllowed("network page write has the wrong layout")
+    off, ports = NET_REC_OFF, 0
+    while off + NET_REC <= len(data) and ports < 4 and any(data[off:off + 4]):
+        ip, mask, gw, mtu = struct.unpack_from(">LLLH", data, off)
+        if not mask or not 1500 <= mtu <= 9000:
+            raise NotAllowed("network page write has an invalid port record")
+        off += NET_REC
+        ports += 1
+    if not ports or any(data[off:]):
+        raise NotAllowed("network page write has no ports, or data past the last port")
 
 
 def blink_cdb(seq: int) -> bytes:
@@ -64,9 +91,12 @@ def _check_write_allowed(cdb: bytes, data: bytes) -> None:
         if bytes(data) != BLINK_DATA:
             raise NotAllowed("Blink Lights payload must be a single zero byte")
         return
+    if cdb == NET_CDB:
+        _check_network_payload(bytes(data))
+        return
     if cdb != USAGE_CDB:
         raise NotAllowed(f"refusing to write with CDB {cdb.hex()} "
-                         "(only the usage report and Blink Lights are allowed)")
+                         "(only the usage report, Blink Lights and the network page are allowed)")
     if len(data) != USAGE_LEN or data[4] != 0x01 or not 0 < data[5] <= USAGE_MAX_RECORDS:
         raise NotAllowed("usage report payload has the wrong shape")
     if any(data[6 + data[5] * USAGE_REC:]):

@@ -17,7 +17,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__, metrics
 from .config import Config
-from .monitor import Monitor
+from .monitor import Monitor, NetConflict
+from .netconfig import NetError, ports_in_use
 from .redact import redact
 from .scsi import RecordingTransport
 from .settings import SettingsError, SettingsStore, default_path
@@ -129,7 +130,49 @@ def create_app(cfg: Config | None = None, monitor: Monitor | None = None, start_
     def status(request: Request):
         return {"version": __version__, "monitor": mon.state(),
                 "snapshot": mon.snapshot.to_dict() if mon.snapshot else None,
-                "actions": {"blink": bool(cfg.blink_button and can_edit(request)[0])}}
+                "actions": {"blink": bool(cfg.blink_button and can_edit(request)[0]),
+                            "network": bool(cfg.network_edit and can_edit(request)[0])}}
+
+    def check_network(request: Request) -> None:
+        if not cfg.network_edit:
+            raise HTTPException(403, "Changing port network settings is turned off in Settings.")
+
+    @app.get("/api/unit/network", dependencies=guard)
+    async def get_network(request: Request):
+        """The unit's port settings, read fresh, and which ports this computer connects through."""
+        check_network(request)
+        try:
+            ports = await asyncio.to_thread(mon.network_ports)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"Couldn't read the Drobo's port settings ({e})") from None
+        in_use = await asyncio.to_thread(ports_in_use, [p.ip for p in ports])
+        return {"ports": [p.as_dict() for p in ports], "editable": can_edit(request)[0],
+                "in_use": sorted(in_use) if in_use is not None else None}
+
+    @app.post("/api/unit/network", dependencies=guard)
+    async def set_network(request: Request):
+        """Change one port. Body: {"port": 1, "ip", "netmask", "gateway", "mtu",
+        "expected": [<every port as GET returned it>], "confirm": true}."""
+        check_write(request)
+        check_network(request)
+        try:
+            body = await request.json()
+        except ValueError:
+            raise HTTPException(400, "body isn't valid JSON") from None
+        if not isinstance(body, dict) or body.get("confirm") is not True:
+            raise HTTPException(400, 'send "confirm": true to change the Drobo\'s network settings')
+        port, expected = body.get("port"), body.get("expected")
+        if not isinstance(port, int) or isinstance(port, bool) or not isinstance(expected, list):
+            raise HTTPException(400, 'expected {"port": <n>, ..., "expected": [...]}')
+        new = {k: body.get(k) for k in ("ip", "netmask", "gateway", "mtu")}
+        try:
+            return await asyncio.to_thread(mon.set_network, port, new, expected)
+        except NetError as e:
+            return JSONResponse({"errors": e.errors}, status_code=422)
+        except NetConflict as e:
+            raise HTTPException(409, str(e)) from None
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, str(e)) from None
 
     @app.post("/api/blink", dependencies=guard)
     async def blink(request: Request):
