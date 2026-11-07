@@ -191,3 +191,55 @@ table.vols { width: 100%; border-collapse: collapse; }
   .bay .led { grid-column: 3; grid-row: 1 / span 2; }
   .vols .iqn, .vols th:last-child { display: none; }
 }
+
+/* ---------- settings ---------- */
+a.icon-btn { color: var(--text); text-decoration: none; }
+.settings { display: flex; flex-direction: column; gap: 16px; padding: 16px 24px 8px; max-width: 820px; margin: 0 auto; }
+.has-savebar .foot { padding-bottom: 88px; }
+.group-desc { margin: -4px 0 8px; color: var(--muted); font-size: 13px; }
+.settings .row { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 6px 20px; padding: 12px 0; border-top: 1px solid var(--line); align-items: start; }
+.settings .row > label { font-weight: 600; padding-top: 7px; }
+.settings .row.bool > label { padding-top: 3px; }
+.settings .ctl { min-width: 0; }
+.settings input[type=text], .settings input[type=url], .settings input[type=password], .settings input[type=number], .settings select {
+  width: 100%; font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-height: 36px;
+}
+.settings input:focus-visible, .settings select:focus-visible, .btn:focus-visible, .switch input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: 1px; }
+.settings input:disabled, .settings select:disabled { opacity: .6; cursor: not-allowed; }
+.settings .row.bad input, .settings .row.bad select { border-color: var(--red); }
+.inwrap { display: flex; align-items: center; gap: 8px; }
+.inwrap.num input { max-width: 140px; }
+.inwrap .unit { color: var(--muted); font-size: 13px; }
+.help { margin: 5px 0 0; color: var(--muted); font-size: 12.5px; }
+.err { margin: 5px 0 0; color: var(--red); font-size: 12.5px; font-weight: 600; }
+.lock { display: block; margin-top: 5px; font-size: 12px; color: var(--yellow); }
+.tag { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; margin-left: 4px; white-space: nowrap; }
+.switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+.switch input:disabled { cursor: not-allowed; }
+.switch span { position: absolute; inset: 0; border-radius: 11px; background: var(--line); transition: background .15s; }
+.switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s; }
+.switch input:checked + span { background: var(--blue); }
+.switch input:checked + span::after { transform: translateX(18px); }
+.switch input:disabled + span { opacity: .5; }
+.btn { font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 8px; padding: 7px 14px; cursor: pointer; min-height: 36px; }
+.btn.small { font-size: 12.5px; padding: 4px 10px; min-height: 30px; }
+.btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+.btn:disabled { opacity: .6; cursor: progress; }
+.link { border: 0; background: none; color: var(--blue); font: inherit; font-size: 13px; cursor: pointer; padding: 4px; white-space: nowrap; }
+.test-result { margin: 0 0 8px; padding: 8px 12px; border-radius: 8px; background: var(--info-bg); font-size: 13px; }
+.test-result.good { background: var(--ok-bg); } .test-result.bad { background: var(--crit-bg); }
+.savebar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 10; width: min(780px, calc(100% - 32px));
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 16px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.18); }
+.savebar #save-msg { font-weight: 600; min-width: 0; }
+.savebar #save-msg.good { color: var(--green); } .savebar #save-msg.bad { color: var(--red); }
+.savebar-btns { display: flex; gap: 8px; flex: none; }
+@media (max-width: 720px) {
+  .settings { padding: 12px 16px; gap: 12px; }
+  .settings .row { grid-template-columns: minmax(0, 1fr); }
+  .settings .row > label { padding-top: 0; }
+  .savebar { flex-wrap: wrap; }
+}
+.savebar[hidden] { display: none; }
+.icon-btn { flex: none; }

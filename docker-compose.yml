@@ -16,7 +16,7 @@ services:
     cap_add: [SYS_RAWIO]           # needed for the Drobo vendor SCSI commands
     environment:
       DROBOWEB_DEVICE: /dev/sg3
-      DROBOWEB_POLL_SECONDS: "10"
+      # DROBOWEB_POLL_SECONDS: "10"    # set here, it can no longer be changed on the Settings page
       # DROBOWEB_AUTH_USER: admin
       # DROBOWEB_AUTH_PASSWORD: change-me
       # DROBOWEB_WEBHOOK_URL: https://discord.com/api/webhooks/...

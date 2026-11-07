@@ -22,6 +22,9 @@ shows the result in a browser, with history and alerts the original never had.
 - **Alerts**: drive failed, removed or inserted; health changes; redundancy lost; relayout
   started or finished; temperature and capacity thresholds; unit unreachable. Delivered by
   webhook (generic JSON, Discord, Slack, Teams, ntfy) and/or email.
+- **Settings page**: alert email and webhooks (with a "send test alert" button), alert
+  thresholds, polling, history retention, login, and usage reporting. Changes apply
+  without a restart.
 - **Prometheus** `/metrics` endpoint, plus a JSON API (`/api/docs`).
 - **Read-only by default**: every SCSI command passes an allowlist (INQUIRY, MODE SENSE and the
   vendor volume-list read). The one exception is the opt-in volume-usage report that
@@ -53,6 +56,8 @@ tray app:
 - Windows notifications for drive failures, redundancy loss, rebuilds, temperature,
   capacity and lost contact.
 - Click the icon to open the full dashboard (served on `http://127.0.0.1:8780`, this PC only).
+- **Settings…** opens the settings page: alert email, webhooks, thresholds, desktop
+  notifications, start at login.
 - **Start when I log in**: a scheduled task that starts it elevated, without a UAC prompt each time.
 - **Report volume usage to the Drobo** (off by default): see below.
 
@@ -147,7 +152,22 @@ SCSI opcodes from processes with that capability.
 
 ## Configuration
 
-Environment variables (CLI flags override them where they exist):
+Most settings can be changed on the **Settings page** (the gear icon on the dashboard, or
+**Settings…** in the tray menu). Changes take effect immediately and are saved to
+`droboweb-settings.json` next to the history database (`settings.json` in the tray app's
+folder). The file can hold passwords, so it's created readable by its owner only.
+
+Command-line flags win over environment variables, which win over the Settings page. A
+setting fixed by a flag or a variable is shown on the page with a note, and can't be changed
+there.
+
+Editing is allowed from the computer drobo-web runs on, or from anywhere once a login is set
+(`DROBOWEB_AUTH_USER` / `DROBOWEB_AUTH_PASSWORD`, or the page's Access section). Otherwise the
+page is read-only, because it holds alert passwords and the usage-report write. Set
+`DROBOWEB_SETTINGS_UI=on` to allow editing without a login on a trusted network, or `off` to
+always make it read-only.
+
+Environment variables:
 
 | Variable | Default | |
 |---|---|---|
@@ -157,6 +177,8 @@ Environment variables (CLI flags override them where they exist):
 | `DROBOWEB_SAMPLE_SECONDS` | `60` | how often a history point is stored |
 | `DROBOWEB_DB_PATH` | `droboweb.sqlite3` | history and events |
 | `DROBOWEB_RETENTION_DAYS` | `90` | |
+| `DROBOWEB_SETTINGS_PATH` | next to the database | file the Settings page saves to |
+| `DROBOWEB_SETTINGS_UI` | `auto` | `auto` (editable with a login or from this computer), `on`, `off` |
 | `DROBOWEB_TEMP_WARN_C` | `50` | drive temperature alert |
 | `DROBOWEB_CAPACITY_WARN_PCT` | `85` | capacity alert |
 | `DROBOWEB_AUTH_USER` / `_PASSWORD` | (empty) | HTTP basic auth for the UI and API (`/healthz` stays open) |
@@ -184,6 +206,7 @@ droboweb dump    [-o FILE] [--no-redact]   # raw responses, for bug reports and 
 | ✅ | Read-only status: bays, lights, temperatures, capacity, volumes, ports, firmware, flags |
 | ✅ | History, alerts, Prometheus, demo mode |
 | ✅ | Windows tray app (DDAssist replacement); volume-usage report (Dashboard replacement), opt-in |
+| ✅ | Settings page for drobo-web's own settings (alerts, thresholds, polling, login) |
 | ⏳ | First run on real hardware (Windows pass-through and the usage report are built to the capture, not yet run against a unit) |
 | ⏳ | Confirm which iSCSI target Linux should use for management (needs a discovery listing) |
 | ⏳ | Map the unknown status bits and option flags |

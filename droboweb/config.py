@@ -25,9 +25,11 @@ class Config:
     poll_seconds: float = 10.0
     sample_seconds: float = 60.0    # how often a history point is stored
     db_path: str = "droboweb.sqlite3"
+    settings_path: str = ""         # Settings page file; default: next to db_path
     retention_days: int = 90
     temp_warn_c: int = 50
     capacity_warn_pct: float = 85.0
+    settings_ui: str = "auto"       # auto (needs a login, or this computer) | on | off
     auth_user: str = ""
     auth_password: str = ""
     webhook_url: str = ""

@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .config import Config
 from .events import SEVERITY_ORDER
+from .settings import FIELDS, Field, SettingsStore
 
 log = logging.getLogger("droboweb.tray")
 
@@ -75,6 +76,20 @@ def build_config(settings: dict, ddir: Path, demo: str = "") -> Config:
         cfg.demo = demo
         cfg.db_path = ":memory:"  # never mix demo data into the real history
     return cfg
+
+
+def tray_fields() -> tuple[Field, ...]:
+    """Settings that only make sense for the tray app on this computer."""
+    out = [
+        Field("notifications", "Desktop notifications", "desktop", "bool", default=True,
+              help="Show a notification on this computer for each alert."),
+        Field("port", "Dashboard port", "desktop", "int", min=1024, max=65535, restart=True,
+              help="The dashboard is served on http://127.0.0.1:<port>/, for this computer only."),
+    ]
+    if os.name == "nt":
+        out.append(Field("autostart", "Start when I log in", "desktop", "bool", get=autostart_enabled,
+                         set=set_autostart, help="Starts elevated from a scheduled task, without a UAC prompt."))
+    return tuple(out)
 
 
 # ---------------------------------------------------------------- icon
@@ -172,6 +187,8 @@ class TrayApp:
         self.settings = load_settings(self.settings_path)
         self.demo = demo
         self.cfg = build_config(self.settings, self.ddir, demo)
+        self.store = SettingsStore(self.cfg, self.settings_path, FIELDS + tray_fields())
+        self.store.listeners.append(self.on_settings_changed)
         self.server = None
         self.monitor = None
         self.icon = None
@@ -186,16 +203,16 @@ class TrayApp:
         from .monitor import Monitor
         self.monitor = Monitor(self.cfg)
         self.monitor.listeners.append(self.on_event)
-        app = create_app(self.cfg, self.monitor)
+        app = create_app(self.cfg, self.monitor, settings=self.store)
         self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=self.cfg.port,
                                                     log_config=None, log_level="warning"))
         threading.Thread(target=self.server.run, name="server", daemon=True).start()
 
     # -- notifications
     def on_event(self, ev, unit: str) -> None:
-        if not self.settings.get("notifications", True) or self.icon is None:
+        if not self.store.get("notifications") or self.icon is None:
             return
-        floor = SEVERITY_ORDER.get(self.settings.get("notify_min_severity", "warning"), 1)
+        floor = SEVERITY_ORDER.get(self.cfg.notify_min_severity, 1)
         if SEVERITY_ORDER.get(ev.severity, 0) < floor:
             return
         title = {"critical": f"{unit}: critical", "warning": f"{unit}: warning"}.get(ev.severity, unit)
@@ -208,29 +225,28 @@ class TrayApp:
     def open_dashboard(self, *_):
         webbrowser.open(self.url)
 
+    def open_settings(self, *_):
+        webbrowser.open(self.url + "settings.html")
+
+    def on_settings_changed(self, changed: set[str]) -> None:
+        if "report_usage" in changed and self.cfg.report_usage and self.icon:
+            self.icon.notify("Drobo Web will now report this host's volume usage to the Drobo, "
+                             "replacing Drobo Dashboard. It won't while Dashboard's service is running.",
+                             "Usage reporting on")
+        if self.icon:
+            self.icon.update_menu()
+
     def toggle(self, key: str):
         def fn(*_):
-            self.settings[key] = not self.settings.get(key, False)
-            save_settings(self.settings_path, self.settings)
-            if key == "report_usage":
-                self.cfg.report_usage = self.settings[key]
-                if self.settings[key] and self.icon:
-                    self.icon.notify("Drobo Web will now report this host's volume usage to the Drobo, "
-                                     "replacing Drobo Dashboard. It won't while Dashboard's service is running.",
-                                     "Usage reporting on")
+            try:
+                self.store.update({key: not self.store.get(key)})
+            except Exception as e:  # noqa: BLE001  (locked by an env var, or schtasks failed)
+                log.warning("%s: %s", key, e)
+                if self.icon:
+                    self.icon.notify(f"Couldn't change that setting: {e}", "Drobo Web")
             if self.icon:
                 self.icon.update_menu()
         return fn
-
-    def toggle_autostart(self, *_):
-        try:
-            set_autostart(not autostart_enabled())
-        except Exception as e:  # noqa: BLE001
-            log.warning("autostart: %s", e)
-            if self.icon:
-                self.icon.notify(f"Couldn't change start-at-login: {e}", "Drobo Web")
-        if self.icon:
-            self.icon.update_menu()
 
     def open_folder(self, *_):
         if os.name == "nt":
@@ -249,7 +265,7 @@ class TrayApp:
 
     def usage_text(self, *_):
         u = self.monitor.usage if self.monitor else {}
-        if not self.settings.get("report_usage"):
+        if not self.cfg.report_usage:
             return "Report volume usage to the Drobo"
         st = u.get("status", "off")
         return {"active": "Report volume usage to the Drobo (active)",
@@ -264,12 +280,14 @@ class TrayApp:
             M(self.status_text, None, enabled=False),
             M("Open dashboard", self.open_dashboard, default=True),
             pystray.Menu.SEPARATOR,
-            M("Notifications", self.toggle("notifications"), checked=lambda _: self.settings.get("notifications", True)),
-            M(self.usage_text, self.toggle("report_usage"), checked=lambda _: self.settings.get("report_usage", False)),
+            M("Settings…", self.open_settings),
+            pystray.Menu.SEPARATOR,
+            M("Notifications", self.toggle("notifications"), checked=lambda _: bool(self.store.get("notifications"))),
+            M(self.usage_text, self.toggle("report_usage"), checked=lambda _: self.cfg.report_usage),
         ]
         if os.name == "nt":
-            items.append(M("Start when I log in", self.toggle_autostart, checked=lambda _: autostart_enabled()))
-        items += [M("Open settings & log folder", self.open_folder), pystray.Menu.SEPARATOR, M("Quit", self.quit)]
+            items.append(M("Start when I log in", self.toggle("autostart"), checked=lambda _: autostart_enabled()))
+        items += [M("Open log folder", self.open_folder), pystray.Menu.SEPARATOR, M("Quit", self.quit)]
         return pystray.Menu(*items)
 
     # -- loop

@@ -39,6 +39,7 @@ class Monitor:
         self._last_prune = 0.0
         self.listeners: list = []          # callables(event, unit) — e.g. the tray's notifications
         self._pending: list[Event] = []    # events raised from the poll thread
+        self._reopen = False               # set when the device setting changes
         # host-reported usage (the one write); injectable for tests
         self.usage_provider = usage_mod.host_usage
         self.dashboard_check = usage_mod.dashboard_service_running
@@ -79,7 +80,22 @@ class Monitor:
                 except Exception:  # noqa: BLE001
                     log.exception("listener failed")
 
+    def apply_settings(self, changed: set[str]) -> None:
+        """Called when the Settings page changes something. Most settings are read live from
+        the config; a new device means reconnecting, which happens before the next poll."""
+        if "device" in changed:
+            self._reopen = True
+        if "report_usage" in changed:
+            self._last_usage = 0.0
+        if "retention_days" in changed:
+            self._last_prune = 0.0
+
     def poll_once(self) -> Snapshot:
+        if self._reopen:
+            self._reopen = False
+            if self.transport is not None and self.mode == "live":
+                self.transport.close()
+                self.transport = None
         if self.transport is None:
             self.transport = self._open()
         snap = read_snapshot(self.transport)

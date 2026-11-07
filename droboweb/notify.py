@@ -38,28 +38,51 @@ class Notifier:
     def wants(self, ev: Event) -> bool:
         return SEVERITY_ORDER.get(ev.severity, 0) >= SEVERITY_ORDER.get(self.cfg.notify_min_severity, 1)
 
+    def channels(self) -> list[str]:
+        out = []
+        if self.cfg.webhook_url:
+            out.append("webhook")
+        if self.cfg.smtp_host and self.cfg.mail_to:
+            out.append("email")
+        return out
+
     def send(self, ev: Event, unit: str) -> None:
         if not self.wants(ev):
             return
-        if self.cfg.webhook_url:
+        for ch in self.channels():
             try:
-                data, headers = _payload(self.cfg.webhook_format, ev, unit)
-                req = urllib.request.Request(self.cfg.webhook_url, data=data, headers=headers, method="POST")
-                urllib.request.urlopen(req, timeout=10).close()
+                self._send(ch, ev, unit)
             except Exception as e:  # noqa: BLE001
-                log.warning("webhook failed: %s", e)
-        if self.cfg.smtp_host and self.cfg.mail_to:
+                log.warning("%s failed: %s", ch, e)
+
+    def test(self, unit: str, channel: str | None = None) -> dict[str, str]:
+        """Send a test alert on each configured channel (or one). Returns {channel: "ok" | error}."""
+        ev = Event("info", "test", "Test alert from drobo-web. If you can read this, alerts work.")
+        result = {}
+        for ch in self.channels():
+            if channel and ch != channel:
+                continue
             try:
-                msg = EmailMessage()
-                msg["Subject"] = f"[Drobo {unit}] {ev.severity.upper()}: {ev.message}"
-                msg["From"] = self.cfg.mail_from or self.cfg.smtp_user or "droboweb@localhost"
-                msg["To"] = self.cfg.mail_to
-                msg.set_content(f"{ev.message}\n\nSeverity: {ev.severity}\nEvent: {ev.kind}\n")
-                with smtplib.SMTP(self.cfg.smtp_host, self.cfg.smtp_port, timeout=15) as s:
-                    if self.cfg.smtp_starttls:
-                        s.starttls()
-                    if self.cfg.smtp_user:
-                        s.login(self.cfg.smtp_user, self.cfg.smtp_password)
-                    s.send_message(msg)
+                self._send(ch, ev, unit)
+                result[ch] = "ok"
             except Exception as e:  # noqa: BLE001
-                log.warning("email failed: %s", e)
+                result[ch] = str(e) or type(e).__name__
+        return result
+
+    def _send(self, channel: str, ev: Event, unit: str) -> None:
+        if channel == "webhook":
+            data, headers = _payload(self.cfg.webhook_format, ev, unit)
+            req = urllib.request.Request(self.cfg.webhook_url, data=data, headers=headers, method="POST")
+            urllib.request.urlopen(req, timeout=10).close()
+            return
+        msg = EmailMessage()
+        msg["Subject"] = f"[Drobo {unit}] {ev.severity.upper()}: {ev.message}"
+        msg["From"] = self.cfg.mail_from or self.cfg.smtp_user or "droboweb@localhost"
+        msg["To"] = self.cfg.mail_to
+        msg.set_content(f"{ev.message}\n\nSeverity: {ev.severity}\nEvent: {ev.kind}\n")
+        with smtplib.SMTP(self.cfg.smtp_host, self.cfg.smtp_port, timeout=15) as s:
+            if self.cfg.smtp_starttls:
+                s.starttls()
+            if self.cfg.smtp_user:
+                s.login(self.cfg.smtp_user, self.cfg.smtp_password)
+            s.send_message(msg)

@@ -6,7 +6,8 @@ protocol 0.11), worked out from a packet capture. The capture is in
 (serial, IQN token, unit name and volume names replaced). drobo-utils by Peter Silva et al.
 documented the same vendor page for earlier models and was the starting point.
 
-Status: **reads are confirmed against live data. Writes are not mapped yet** (see "Open questions").
+Status: **reads are confirmed against live data.** Two setting writes are mapped from a second
+capture (network config and admin password, below); the rest aren't yet (see "Open questions").
 
 ## Transport
 
@@ -26,9 +27,12 @@ Status: **reads are confirmed against live data. Writes are not mapped yet** (se
 | `5A 08 3A <sub> 00 00 00 <len16> 00` | MODE SENSE(10), DBD, vendor page 0x3A, subpage `<sub>` | see below |
 | `EA 10 80 81 <start> 00 21 7C` + 8×`00` | vendor: volume / target list, paged | see below |
 | `55 01 3A 0C 00 00 00 00 56 00` | MODE SELECT(10): **write**, host-reported usage | (Dashboard → unit) |
+| `55 01 3A 31 00 00 00 02 00 00` | MODE SELECT(10): **write**, network config (512 bytes) | (Dashboard → unit) |
+| `55 01 3A 12 00 00 00 02 08 00` | MODE SELECT(10): **write**, set admin password (520 bytes) | (Dashboard → unit) |
+| `55 01 3A 14 00 00 00 02 08 00` | MODE SELECT(10): **write**, admin password, same payload as 3A/12 | (Dashboard → unit) |
 
 Allocation lengths Dashboard uses for each subpage: `01`=0x2C, `02`=0x34, `03`=0x370, `05`=0x3A,
-`06`=0x06, `08`=0x14A, `09`=0x20, `30`=0x1D, `31`=0x210.
+`06`=0x06, `08`=0x14A, `09`=0x20, `15`=0x31, `30`=0x1D, `31`=0x210.
 
 Each vendor-page reply starts with a 4-byte header: `7A <sub> <len_hi> <len_lo>` (0x7A is
 page 0x3A with the SPF bit set). Offsets below are **relative to the payload**, i.e. after
@@ -97,7 +101,33 @@ Feature bits are the `u32` at payload offset 182 (0x0056FDFF on this unit). Bit 
 ### 3A/31: network
 Port records start at payload offset 10. Each is 14 bytes: `u32 ip, u32 netmask, u32 gateway, u16 mtu`.
 A zero IP ends the list. This unit: `169.0.0.3/29` and `169.0.0.2/29`, gateway `169.0.0.1`, MTU 9000.
-Payload bytes 0–9 (`00×7 0F 00 0E`) aren't mapped yet; 0x0E is likely the record size.
+Payload bytes 0–9 are `00×7 <flags> 00 0E`: 0x0E is the record size. The flags byte was 0x0F
+on a unit without an admin password and became **0x1F the moment an admin password was set**,
+so bit 0x10 means "admin password set" or "this session has authenticated" (one capture can't
+tell which). The other bits aren't mapped.
+
+The reply header's length is little-endian here (`7A 31 FC 01`), unlike the other pages.
+
+### MODE SELECT 3A/31: network config (write)
+Dashboard writes the whole page back with the changed field. Header `7A 31 01 FC` (length
+big-endian, 0x1FC = 508), then the same payload as the read: flags byte, record size 0x0E, and
+one 14-byte record per port, zero-filled to 512 bytes. Confirmed by changing port 1's MTU
+from 9000 to 8999: the write carried `… 23 27` in port 1's MTU field, and the next read
+returned 8999. Changing IP, netmask or gateway is presumed to work the same way, but isn't captured.
+
+### MODE SELECT 3A/12 and 3A/14: admin password (write)
+Changing the admin password in Dashboard sent **the same 520-byte payload to 3A/12 and then
+3A/14**, 70 ms apart (only the subpage byte in the header differs). The likely reading is
+that 3A/12 sets the password and 3A/14 authenticates with it, which would explain why the
+network write 22 s later needed nothing more. The payload is `7A <sub> 02 08`, then
+`01 27 A7 03 E8`, then 158 bytes that aren't plain text: an 82-byte pattern repeats inside it,
+which suggests a fixed-key encoding of a short padded secret. The rest of the payload is zero.
+Decoding it needs captures of known passwords (for example `a`, then `aa`), and the real
+captured payload isn't published here because it's derived from a real password.
+
+### 3A/15: identity
+Read by Dashboard while it detects units (`5A 08 3A 15 … 31`). Payload `01 01 03 EA` and then
+the unit serial as ASCII, zero-padded. 0x03EA may be a model id.
 
 ### Vendor 0xEA: volumes / iSCSI targets
 Request `EA 10 80 81 <start> 00 <alloc16>`. Dashboard asks with `start=1`, then with
@@ -139,10 +169,13 @@ It's the only write in a normal Dashboard session.
 
 1. **Which target does Dashboard's management session log in to?** The capture began after the login.
    Output of `iscsiadm -m discovery -t sendtargets -p <unit-ip>` would answer it.
-2. **Setting writes**: rename, light dimming, network config, email alerts, and volume create/delete/resize.
-   Capture Dashboard while making one change at a time.
-3. Bytes 68 (bay record) and 0x107/0x119 (volume record), and status bits 0x8000/0x10000.
-4. Whether the 0xEA command takes other subcommands (byte 3 ≠ 0x81).
+2. **Setting writes**: rename, light dimming, drive spin-down, email alerts, and volume
+   create/delete/resize. Capture Dashboard while making one change at a time. (Network config and
+   admin password are mapped above.)
+3. **The admin password**: how the 3A/12 payload encodes it, whether 3A/14 is "authenticate",
+   and whether other writes are refused once a password is set but not supplied.
+4. Bytes 68 (bay record) and 0x107/0x119 (volume record), and status bits 0x8000/0x10000.
+5. Whether the 0xEA command takes other subcommands (byte 3 ≠ 0x81).
 
 Captures from other models (B810i, B1200i, DroboPro, DroboElite) are very welcome. Use
 `tools/pcap_to_fixture.py`, or `droboweb dump` on Linux. Both redact by default.

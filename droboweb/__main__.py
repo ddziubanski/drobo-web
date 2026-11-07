@@ -44,6 +44,7 @@ def cmd_serve(args, cfg):
         v = getattr(args, k, None)
         if v:
             setattr(cfg, k, v)
+            cfg.extra.setdefault("locked", {})[k] = f"command line (--{k.replace('_path', '')})"
     uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port, log_level="info")
 
 
