@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "drobo-web"
-version = "1.0.0"
+version = "1.0.1"
 description = "Read-only web dashboard and monitor for the Drobo B800i (iSCSI), on Linux"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
