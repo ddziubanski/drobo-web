@@ -27,8 +27,8 @@
   };
   const when = (ts) => new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-  const LED_CLASS = { green: "green", yellow: "yellow", red: "red", "red-green": "red flash-rg", "red-yellow": "red flash-ry", "red-off": "red flash" };
-  const LED_TEXT = { green: "OK", yellow: "Replace soon / nearly full", red: "Failed — replace this drive", "red-green": "Rebuilding — do not remove", "red-yellow": "Warning — check unit", "red-off": "Failed", off: "Off", empty: "Empty" };
+  const LED_CLASS = { green: "green", yellow: "yellow", red: "red", "red-green": "red flash-rg", "red-yellow": "red flash-ry", "red-off": "red flash", identify: "identify" };
+  const LED_TEXT = { green: "OK", yellow: "Replace soon / nearly full", red: "Failed — replace this drive", "red-green": "Rebuilding — do not remove", "red-yellow": "Warning — check unit", "red-off": "Failed", off: "Off", empty: "Empty", identify: "Blinking (Blink Lights)" };
   const PALETTE = ["#2f8cff", "#22b866", "#e0a800", "#e5484d", "#9b6bff", "#14b8c4", "#ff7a45", "#8f9bab"];
 
   // ---------- theme ----------
@@ -86,6 +86,7 @@
       critical: ["Critical", "A drive has failed or data is at risk. Check the red bay."],
     }[s.health] || ["Unknown", ""];
     lines.push(`<div class="status-line ${sev}"><span class="dot"></span><div><b>${headline[0]}</b><span class="muted">${headline[1]}</span></div></div>`);
+    if (s.identifying) lines.push(`<div class="status-line info"><span class="dot"></span><div><b>Lights blinking</b><span class="muted">Blink Lights is flashing the front panel. The drive lights here show their last state until it stops.</span></div></div>`);
     const benign = ["Data protection in progress", "Format in progress", "New firmware installed", "New volume available after reboot"];
     for (const st of s.status || []) {
       if (st === "Data protection in progress") continue;

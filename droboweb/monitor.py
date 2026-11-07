@@ -179,6 +179,17 @@ class Monitor:
                 self._emit([Event("critical", "unreachable", f"Lost contact with the Drobo: {err}")])
             return
         pending, self._pending = self._pending, []
+        if snap.identifying:
+            # Blink Lights is running (from drobo-web or Drobo Dashboard). The unit reports every
+            # bay as flashing, so keep each drive's last real light instead of raising alarms.
+            prev = {b.slot: b for b in self.snapshot.bays} if self.snapshot else {}
+            for b in snap.bays:
+                o = prev.get(b.slot)
+                if b.present and o is not None and o.present:
+                    b.led = o.led
+            started_here = any(e.kind == "blink" for e in pending)
+            if not (self.snapshot and self.snapshot.identifying) and not started_here:
+                pending.append(Event("info", "identify", "Front-panel lights are blinking (Blink Lights)"))
         if self.cfg.demo and self.snapshot is None and not self.store.history(24 * 8, 10):
             backfill(self.store, snap)
         events = diff(self.snapshot, snap, self.cfg.temp_warn_c, self.cfg.capacity_warn_pct)

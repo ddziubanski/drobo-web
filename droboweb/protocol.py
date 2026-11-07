@@ -97,6 +97,7 @@ class Bay:
     managed_bytes: int
     temperature_c: int | None
     raw_tail: str
+    led_code: int = 0           # the raw light byte from the unit
 
 
 @dataclass
@@ -147,6 +148,7 @@ class Snapshot:
     volumes: list[Volume] = field(default_factory=list)
     ports: list[Port] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    identifying: bool = False   # Blink Lights is running: the lights don't show drive state
 
     @property
     def health(self) -> str:
@@ -188,15 +190,28 @@ def parse_slots(p: bytes) -> list[Bay]:
         if off + SLOT_REC.size > len(p):
             break
         _, slot, phys, managed, led, model, _short, tail = SLOT_REC.unpack_from(p, off)
-        present = led != 0x80 and phys > 0
+        empty = bool(led & 0x80)  # 0x80 empty; during Blink Lights an empty bay reads 0x85
+        present = not empty and phys > 0
         temp = tail[2] if present and 5 <= tail[2] <= 90 else None
         bays.append(Bay(
             slot=slot, present=present,
-            led="empty" if led == 0x80 else LED_COLOURS[led & 0x0F] if (led & 0x0F) < len(LED_COLOURS) else f"0x{led:02x}",
+            led="empty" if empty else LED_COLOURS[led & 0x0F] if (led & 0x0F) < len(LED_COLOURS) else f"0x{led:02x}",
             model=_s(model), physical_bytes=phys, managed_bytes=managed,
-            temperature_c=temp, raw_tail=tail.hex(),
+            temperature_c=temp, raw_tail=tail.hex(), led_code=led,
         ))
     return bays
+
+
+IDENTIFY_LED = 0x05
+ALERT_BITS = 0x0002 | 0x0004 | 0x0010 | 0x0020  # red alert, yellow alert, bad disk, too many missing
+
+
+def is_identifying(bays: list[Bay], status_bits: int) -> bool:
+    """True while Blink Lights runs. The unit then reports every bay, empty ones included, as
+    flashing red/yellow (0x05, or 0x85 for an empty bay), while its status flags stay clear.
+    A real fault never lights an empty bay or every bay at once without raising an alert bit."""
+    return (len(bays) >= 2 and all((b.led_code & 0x0F) == IDENTIFY_LED for b in bays)
+            and not status_bits & ALERT_BITS)
 
 
 def parse_settings(p: bytes) -> tuple[int, int, str]:
@@ -335,4 +350,9 @@ def read_snapshot(t: Transport) -> Snapshot:
                       ("settings", settings), ("firmware", fw), ("status", status),
                       ("options", options), ("network", net), ("volumes", vols)]:
         attempt(label, fn)
+    if is_identifying(s.bays, s.status_bits):
+        s.identifying = True
+        for b in s.bays:
+            if b.present:
+                b.led = "identify"  # the real light is hidden; the monitor fills in the last one seen
     return s

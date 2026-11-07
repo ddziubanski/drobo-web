@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 HEALTH = {"ok": 0, "rebuilding": 1, "warning": 2, "critical": 3}
-LED = {"off": 0, "green": 1, "yellow": 2, "red": 3, "red-green": 4, "red-yellow": 5, "red-off": 6, "empty": -1}
+LED = {"off": 0, "green": 1, "yellow": 2, "red": 3, "red-green": 4, "red-yellow": 5, "red-off": 6, "identify": 7, "empty": -1}
 
 
 def _esc(v: str) -> str:
@@ -36,7 +36,9 @@ def render(mon) -> str:
     bays = [b for b in s.bays]
     m("bay_present", "1 if a drive is in the bay", "gauge",
       [({**u, "bay": b.slot + 1}, int(b.present)) for b in bays])
-    m("bay_led", "Bay light: 1 green, 2 yellow, 3 red, 4-6 flashing red, -1 empty", "gauge",
+    m("identifying", "1 while Blink Lights is flashing the front panel", "gauge", [(u, int(s.identifying))])
+    m("bay_led", "Bay light: 1 green, 2 yellow, 3 red, 4-6 flashing red, 7 blinking (identify, "
+      "last light unknown), -1 empty", "gauge",
       [({**u, "bay": b.slot + 1}, LED.get(b.led, 0)) for b in bays])
     m("drive_size_bytes", "Drive physical size", "gauge",
       [({**u, "bay": b.slot + 1, "model": b.model}, b.physical_bytes) for b in bays if b.present])

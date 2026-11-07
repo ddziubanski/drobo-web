@@ -58,7 +58,7 @@ that header.
 | 2 | u8 | bay index (0-based) |
 | 3 | u64 | physical size, bytes |
 | 11 | u64 | managed size (0 on B800i) |
-| 19 | u8 | light: `0x80` empty, else low nibble indexes `off, red, yellow, green, red/green flash, red/yellow flash, red/off flash` |
+| 19 | u8 | light: bit `0x80` empty, low nibble indexes `off, red, yellow, green, red/green flash, red/yellow flash, red/off flash` |
 | 20 | char[32] | drive model |
 | 52 | char[16] | drive model, short |
 | 68 | u8 | ? (0 for the WD Red Pro drives, 2 for the WD RE drive) |
@@ -149,6 +149,13 @@ so the byte doesn't select anything: it's either unfilled memory, like the junk 
 report, or a blink duration in seconds. None of the pages drobo-web reads change. The capture had
 an admin password set, and Dashboard had authenticated with 3A/14 earlier in the session; whether
 Blink Lights needs that isn't known.
+
+**While the lights blink (about 10 s per press) the bay records change:** every bay reports
+light `0x05` (flashing red/yellow) and every empty bay `0x85` (0x80 "empty" plus 0x05), while the
+3A/09 status flags stay as they were. Read naively, that looks like every drive failing at once.
+drobo-web treats "all bays 0x05, no red/yellow alert, bad disk or missing-disk bit" as Blink Lights
+(whoever pressed it), keeps each drive's last real light, and raises no alerts. In the capture
+this matched all 110 bay reads taken during a blink and none of the 166 others.
 
 drobo-web sends exactly this command, with its own counter starting at 1 and a zero data byte
 (the value Dashboard's last press sent), only when someone presses its Blink Lights button.

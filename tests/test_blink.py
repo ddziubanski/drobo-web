@@ -46,7 +46,8 @@ def test_monitor_blink_counts_up_and_logs():
     (c1, d1), (c2, d2) = mon.transport.writes[-2:]
     assert (c1[4], c2[4]) == (1, 2) and d1 == d2 == b"\x00"
     mon._handle(mon.poll_once(), None)
-    assert mon.store.events()[0]["kind"] == "blink"
+    kinds = [e["kind"] for e in mon.store.events()]
+    assert kinds[0] == "blink" and "identify" not in kinds  # one event per press
     mon._blink_seq = 0xFF
     mon.blink()
     assert mon.transport.writes[-1][0][4] == 1  # wraps, skipping 0
@@ -107,3 +108,69 @@ def test_tray_menu_has_blink(tmp_path, monkeypatch):
     app = TrayApp(demo="healthy")
     texts = [str(i.text) for i in app.build_menu().items]
     assert "Blink lights" in texts
+
+
+# ------------------------------------------------------------------ the unit while it blinks
+
+def _blinking_bays(fixture_bytes: bytes) -> bytes:
+    """The fixture's 3A/03 reply as the unit sent it during Blink Lights in a capture:
+    every bay 0x05, empty bays 0x85."""
+    b = bytearray(fixture_bytes)
+    for i in range(b[4]):
+        off = 4 + 1 + i * 72
+        b[off + 19] = (b[off + 19] & 0x80) | 0x05
+    return bytes(b)
+
+
+def test_parser_recognises_blink_lights():
+    from droboweb.demo import DemoTransport
+    from droboweb.protocol import parse_slots, is_identifying
+    t = DemoTransport()
+    bays = parse_slots(_blinking_bays(t.responses["3a03"])[4:])
+    assert [b.present for b in bays] == [True] * 6 + [False] * 2  # 0x85 is still an empty bay
+    assert is_identifying(bays, 0x00018000)
+    assert not is_identifying(bays, 0x00018000 | 0x0002)  # with a red alert it's a real fault
+    real = parse_slots(t.responses["3a03"][4:])
+    assert not is_identifying(real, 0x00018000)
+    one_bad = parse_slots(t.responses["3a03"][4:])
+    one_bad[0].led_code = 0x05
+    assert not is_identifying(one_bad, 0x00018000)  # one bay flashing isn't Blink Lights
+
+
+def test_blink_is_not_a_drive_failure():
+    _, mon, _ = make()
+    events_before = len(mon.store.events())
+    mon.blink()
+    snap = mon.poll_once()
+    assert snap.identifying
+    mon._handle(snap, None)
+    assert mon.snapshot.health == "ok"
+    assert all(b.led == "green" for b in mon.snapshot.bays if b.present)  # last real light kept
+    new = mon.store.events()[: len(mon.store.events()) - events_before]
+    assert [e["kind"] for e in new] == ["blink"]
+    assert all(e["severity"] == "info" for e in new)
+    mon.transport.blink_until = 0  # the blink ends
+    mon._handle(mon.poll_once(), None)
+    assert not mon.snapshot.identifying and mon.snapshot.health == "ok"
+    assert all(e["severity"] == "info" for e in mon.store.events())
+
+
+def test_real_fault_still_shows_during_blink():
+    _, mon, _ = make()
+    mon.snapshot.bays[2].led = "red"  # bay 3 really failed before the blink
+    mon.blink()
+    mon._handle(mon.poll_once(), None)
+    assert mon.snapshot.bays[2].led == "red" and mon.snapshot.health == "critical"
+
+
+def test_first_poll_during_blink():
+    from droboweb.monitor import Monitor
+    cfg = Config(demo="healthy", db_path=":memory:")
+    mon = Monitor(cfg)
+    mon.transport = mon._open()
+    mon.transport.write(blink_cdb(1), b"\x00")  # as if Drobo Dashboard pressed Blink Lights
+    mon._handle(mon.poll_once(), None)
+    assert mon.snapshot.health == "ok"
+    assert "identify" in [e["kind"] for e in mon.store.events()]
+    assert {b.led for b in mon.snapshot.bays if b.present} == {"identify"}
+    assert not [e for e in mon.store.events() if e["severity"] != "info"]

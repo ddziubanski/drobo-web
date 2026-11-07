@@ -13,7 +13,7 @@ import struct
 import time
 from importlib import resources
 
-from .scsi import ReplayTransport
+from .scsi import BLINK_PREFIX, ReplayTransport
 
 DEFAULT_FIXTURE = resources.files("droboweb") / "fixtures" / "b800i-fw3.45.json"
 
@@ -25,6 +25,12 @@ class DemoTransport(ReplayTransport):
         self.scenario = scenario
         self.speed = speed
         self.t0 = time.time()
+        self.blink_until = 0.0
+
+    def write(self, cdb: bytes, data: bytes) -> None:
+        super().write(cdb, data)
+        if bytes(cdb[:4]) == BLINK_PREFIX:
+            self.blink_until = time.time() + 10  # a real B800i flashes for about 10 s
 
     def _t(self) -> float:
         return (time.time() - self.t0) * self.speed
@@ -50,6 +56,11 @@ class DemoTransport(ReplayTransport):
             if f is not None:
                 off = 4 + 1 + 2 * 72
                 b[off + 19] = 0x01 if int(t) % 2 else 0x04  # red, flashing red/green
+            if time.time() < self.blink_until:
+                # what a real B800i reports during Blink Lights: every bay 0x05, empty ones 0x85
+                for i in range(b[4]):
+                    off = 4 + 1 + i * 72
+                    b[off + 19] = (b[off + 19] & 0x80) | 0x05
         elif key == "3a02":
             free, used, total, unprot = struct.unpack_from(">QQQQ", b, 4)
             grow = int(t * 50_000_000)  # ~50 MB per second of demo time

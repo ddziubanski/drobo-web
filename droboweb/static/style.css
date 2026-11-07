@@ -250,3 +250,5 @@ a.icon-btn { color: var(--text); text-decoration: none; }
 .blink-msg.good { background: var(--ok-bg); } .blink-msg.bad { background: var(--crit-bg); }
 .blink-msg[hidden] { display: none; }
 .card-head h2 { white-space: nowrap; }
+.led.identify { background: var(--blue); box-shadow: 0 0 8px var(--blue); animation: flash 1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .led.identify { animation: none; } }
