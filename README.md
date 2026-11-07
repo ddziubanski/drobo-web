@@ -213,7 +213,7 @@ droboweb dump    [-o FILE] [--no-redact]   # raw responses, for bug reports and 
 | ⏳ | First run on real hardware (Windows pass-through and the usage report are built to the capture, not yet run against a unit) |
 | ⏳ | Confirm which iSCSI target Linux should use for management (needs a discovery listing) |
 | ⏳ | Map the unknown status bits and option flags |
-| 🔜 | Settings that Dashboard can change (rename, dimming, alert email, network). This needs captures of each write, and will be opt-in and off by default |
+| 🔜 | Unit settings and actions Dashboard has (rename, network, admin password, Blink Lights). Network, admin password and Blink Lights are mapped in PROTOCOL.md; they will be opt-in and off by default |
 | 🔜 | Other models (B810i, B1200i, DroboPro, DroboElite): send a capture or a `droboweb dump` |
 
 The protocol notes are in [PROTOCOL.md](PROTOCOL.md).

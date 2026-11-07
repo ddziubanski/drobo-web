@@ -29,7 +29,9 @@ capture (network config and admin password, below); the rest aren't yet (see "Op
 | `55 01 3A 0C 00 00 00 00 56 00` | MODE SELECT(10): **write**, host-reported usage | (Dashboard → unit) |
 | `55 01 3A 31 00 00 00 02 00 00` | MODE SELECT(10): **write**, network config (512 bytes) | (Dashboard → unit) |
 | `55 01 3A 12 00 00 00 02 08 00` | MODE SELECT(10): **write**, set admin password (520 bytes) | (Dashboard → unit) |
-| `55 01 3A 14 00 00 00 02 08 00` | MODE SELECT(10): **write**, admin password, same payload as 3A/12 | (Dashboard → unit) |
+| `55 01 3A 14 00 00 00 02 08 00` | MODE SELECT(10): **write**, authenticate with the admin password | (Dashboard → unit) |
+| `55 01 3A 05 00 00 00 00 2A 00` | MODE SELECT(10): **write**, clock, timezone and unit name (42 bytes) | (Dashboard → unit) |
+| `EA 10 00 06 <seq> 00 21 00 01` + 7×`00` | vendor: **Blink Lights** (identify the unit), 1 data byte | (Dashboard → unit) |
 
 Allocation lengths Dashboard uses for each subpage: `01`=0x2C, `02`=0x34, `03`=0x370, `05`=0x3A,
 `06`=0x06, `08`=0x14A, `09`=0x20, `15`=0x31, `30`=0x1D, `31`=0x210.
@@ -118,12 +120,31 @@ returned 8999. Changing IP, netmask or gateway is presumed to work the same way,
 ### MODE SELECT 3A/12 and 3A/14: admin password (write)
 Changing the admin password in Dashboard sent **the same 520-byte payload to 3A/12 and then
 3A/14**, 70 ms apart (only the subpage byte in the header differs). The likely reading is
-that 3A/12 sets the password and 3A/14 authenticates with it, which would explain why the
-network write 22 s later needed nothing more. The payload is `7A <sub> 02 08`, then
+that 3A/12 sets the password and 3A/14 authenticates with it. A third capture confirms the
+second part: with the password already set, Dashboard sent only 3A/14 (same payload) before
+using Blink Lights. The payload is `7A <sub> 02 08`, then
 `01 27 A7 03 E8`, then 158 bytes that aren't plain text: an 82-byte pattern repeats inside it,
 which suggests a fixed-key encoding of a short padded secret. The rest of the payload is zero.
 Decoding it needs captures of known passwords (for example `a`, then `aa`), and the real
 captured payload isn't published here because it's derived from a real password.
+
+### MODE SELECT 3A/05: clock and name (write)
+Dashboard writes this when it connects (seen 4 s after authenticating), apparently to sync the
+clock. Header `7A 05 26 00` (length little-endian), then `u32 clock`, `s16 tz`, `char[32] name`.
+Unlike the read, the written `clock` is **UTC** seconds and `tz` is the offset in **minutes**,
+big-endian signed: `FE 20` = −480 = UTC−8. The unit then reads back local time and `08 00`, as
+before. The unit name is written back unchanged, so renaming most likely uses this same write
+(not captured yet).
+
+### Vendor 0xEA 06: Blink Lights
+Dashboard's **Blink Lights** button (flashes the front panel to identify the unit) sends
+`EA 10 00 06 <seq> 00 21 00 01` followed by 7 zero bytes, with **one data byte** to the unit.
+`<seq>` goes up by one per command (`8B`, `8C`, `8D`, `8E` in the capture), so it's probably a
+transaction counter. Four presses of the same button carried `4B`, `32`, `32`, `00` (75, 50, 50, 0),
+so the byte doesn't select anything: it's either unfilled memory, like the junk bytes in the usage
+report, or a blink duration in seconds. None of the pages drobo-web reads change. The capture had
+an admin password set, and Dashboard had authenticated with 3A/14 earlier in the session; whether
+Blink Lights needs that isn't known.
 
 ### 3A/15: identity
 Read by Dashboard while it detects units (`5A 08 3A 15 … 31`). Payload `01 01 03 EA` and then
@@ -169,13 +190,14 @@ It's the only write in a normal Dashboard session.
 
 1. **Which target does Dashboard's management session log in to?** The capture began after the login.
    Output of `iscsiadm -m discovery -t sendtargets -p <unit-ip>` would answer it.
-2. **Setting writes**: rename, light dimming, drive spin-down, email alerts, and volume
-   create/delete/resize. Capture Dashboard while making one change at a time. (Network config and
-   admin password are mapped above.)
-3. **The admin password**: how the 3A/12 payload encodes it, whether 3A/14 is "authenticate",
-   and whether other writes are refused once a password is set but not supplied.
+2. **Setting writes**: rename, drive spin-down, email alerts, and volume create/delete/resize.
+   Capture Dashboard while making one change at a time. (Network config, admin password, clock
+   and Blink Lights are mapped above.)
+3. **The admin password**: how the 3A/12 payload encodes it, and whether other writes are
+   refused once a password is set but the session hasn't authenticated with 3A/14.
 4. Bytes 68 (bay record) and 0x107/0x119 (volume record), and status bits 0x8000/0x10000.
-5. Whether the 0xEA command takes other subcommands (byte 3 ≠ 0x81).
+5. Which other subcommands the 0xEA command takes (0x81 volume list and 0x06 Blink Lights are known),
+   and what Blink Lights' data byte does.
 
 Captures from other models (B810i, B1200i, DroboPro, DroboElite) are very welcome. Use
 `tools/pcap_to_fixture.py`, or `droboweb dump` on Linux. Both redact by default.
