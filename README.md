@@ -225,7 +225,8 @@ droboweb dump    [-o FILE] [--no-redact]   # raw responses, for bug reports and 
 | ⏳ | First run on real hardware (Windows pass-through and the usage report are built to the capture, not yet run against a unit) |
 | ⏳ | Confirm which iSCSI target Linux should use for management (needs a discovery listing) |
 | ⏳ | Map the unknown status bits and option flags |
-| 🔜 | Unit settings Dashboard can change (rename, network, admin password). Network and admin password are mapped in PROTOCOL.md; they will be opt-in and off by default |
+| 📝 | **To do: Rename Drobo.** Almost certainly the 3A/05 write (see PROTOCOL.md). Needs one capture of Drobo Dashboard sending a new name, then a "Drobo name" field, opt-in |
+| 🔜 | Other unit settings Dashboard can change (network, admin password). Both are mapped in PROTOCOL.md; they will be opt-in and off by default |
 | 🔜 | Other models (B810i, B1200i, DroboPro, DroboElite): send a capture or a `droboweb dump` |
 
 The protocol notes are in [PROTOCOL.md](PROTOCOL.md).
