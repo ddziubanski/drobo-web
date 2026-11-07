@@ -128,13 +128,17 @@ which suggests a fixed-key encoding of a short padded secret. The rest of the pa
 Decoding it needs captures of known passwords (for example `a`, then `aa`), and the real
 captured payload isn't published here because it's derived from a real password.
 
-### MODE SELECT 3A/05: clock and name (write)
-Dashboard writes this when it connects (seen 4 s after authenticating), apparently to sync the
-clock. Header `7A 05 26 00` (length little-endian), then `u32 clock`, `s16 tz`, `char[32] name`.
+### MODE SELECT 3A/05: unit name and clock (write)
+Header `7A 05 26 00` (length little-endian), then `u32 clock`, `s16 tz`, `char[32] name`.
 Unlike the read, the written `clock` is **UTC** seconds and `tz` is the offset in **minutes**,
 big-endian signed: `FE 20` = −480 = UTC−8. The unit then reads back local time and `08 00`, as
-before. The unit name is written back unchanged, so renaming most likely uses this same write
-(not captured yet).
+before.
+
+Captured once, while the Rename Drobo option was being used: the write carried the current time
+and the **old** name, and the unit kept the old name. The rename to a new name isn't in the
+capture, so this is very likely the rename command (Dashboard writes the whole record, setting
+the clock as a side effect), but a capture with the new name in the payload is still needed to
+confirm it.
 
 ### Vendor 0xEA 06: Blink Lights
 Dashboard's **Blink Lights** button (flashes the front panel to identify the unit) sends
@@ -190,7 +194,8 @@ It's the only write in a normal Dashboard session.
 
 1. **Which target does Dashboard's management session log in to?** The capture began after the login.
    Output of `iscsiadm -m discovery -t sendtargets -p <unit-ip>` would answer it.
-2. **Setting writes**: rename, drive spin-down, email alerts, and volume create/delete/resize.
+2. **Setting writes**: rename (to confirm, see 3A/05), drive spin-down, email alerts, and volume
+   create/delete/resize.
    Capture Dashboard while making one change at a time. (Network config, admin password, clock
    and Blink Lights are mapped above.)
 3. **The admin password**: how the 3A/12 payload encodes it, and whether other writes are
