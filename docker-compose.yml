@@ -1,0 +1,39 @@
+# The iSCSI login happens on the HOST (open-iscsi); the container only gets the
+# SCSI generic device for the Drobo. Find it with:  sudo droboweb list   (or lsscsi -g)
+services:
+  drobo-web:
+    build: .
+    image: drobo-web:latest
+    container_name: drobo-web
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - drobo-data:/data
+    devices:
+      - /dev/sg3:/dev/sg3          # <-- change to your Drobo's /dev/sgN
+    cap_drop: [ALL]
+    cap_add: [SYS_RAWIO]           # needed for the Drobo vendor SCSI commands
+    environment:
+      DROBOWEB_DEVICE: /dev/sg3
+      DROBOWEB_POLL_SECONDS: "10"
+      # DROBOWEB_AUTH_USER: admin
+      # DROBOWEB_AUTH_PASSWORD: change-me
+      # DROBOWEB_WEBHOOK_URL: https://discord.com/api/webhooks/...
+      # DROBOWEB_WEBHOOK_FORMAT: discord      # json | discord | slack | teams | ntfy
+      # DROBOWEB_SMTP_HOST: smtp.example.com
+      # DROBOWEB_MAIL_TO: you@example.com
+
+  # Try it without hardware:  docker compose --profile demo up drobo-web-demo
+  drobo-web-demo:
+    profiles: [demo]
+    build: .
+    image: drobo-web:latest
+    ports:
+      - "8081:8080"
+    environment:
+      DROBOWEB_DEMO: failing
+      DROBOWEB_DEMO_SPEED: "4"
+
+volumes:
+  drobo-data:

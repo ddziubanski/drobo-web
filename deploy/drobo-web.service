@@ -1,0 +1,32 @@
+# /etc/systemd/system/drobo-web.service
+# Install:  sudo pip install /path/to/drobo-web   (or into a venv and adjust ExecStart)
+#           sudo cp deploy/drobo-web.env /etc/default/drobo-web
+#           sudo systemctl daemon-reload && sudo systemctl enable --now drobo-web
+[Unit]
+Description=Drobo Web dashboard (read-only Drobo monitor)
+After=network-online.target iscsid.service open-iscsi.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=-/etc/default/drobo-web
+ExecStart=/usr/local/bin/droboweb serve
+StateDirectory=drobo-web
+WorkingDirectory=/var/lib/drobo-web
+Environment=DROBOWEB_DB_PATH=/var/lib/drobo-web/droboweb.sqlite3
+Restart=on-failure
+RestartSec=10
+
+# Needs raw SCSI access to the Drobo's /dev/sgN and nothing else.
+DynamicUser=yes
+SupplementaryGroups=disk
+AmbientCapabilities=CAP_SYS_RAWIO
+CapabilityBoundingSet=CAP_SYS_RAWIO
+DeviceAllow=char-sg rw
+DevicePolicy=closed
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

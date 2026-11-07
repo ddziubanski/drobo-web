@@ -1,0 +1,9 @@
+# /etc/udev/rules.d/99-drobo-no-automount.rules
+# Stops desktop auto-mounters (udisks2) from touching Drobo volumes that appear when
+# this host logs in to the B800i over iSCSI. drobo-web never mounts anything; this
+# keeps the desktop from doing it either. Reload: sudo udevadm control --reload
+#
+# If `droboweb list` shows a different vendor string for your unit, add it here.
+SUBSYSTEM=="block", ENV{ID_VENDOR}=="Drobo*", ENV{UDISKS_IGNORE}="1", ENV{UDISKS_AUTO}="0"
+SUBSYSTEM=="block", ENV{ID_VENDOR}=="TRUSTED*", ENV{UDISKS_IGNORE}="1", ENV{UDISKS_AUTO}="0"
+SUBSYSTEM=="block", ENV{ID_PATH}=="ip-*:3260-iscsi-iqn.2005-06.com.drobo:*", ENV{UDISKS_IGNORE}="1", ENV{UDISKS_AUTO}="0"

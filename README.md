@@ -1,0 +1,159 @@
+# drobo-web
+
+A modern, read-only web dashboard for the **Drobo B800i** iSCSI SAN, running on Linux.
+
+Drobo went out of business in 2023, and Drobo Dashboard only runs on Windows and macOS.
+The B800i has no web interface or management IP: Dashboard manages it with vendor SCSI
+commands sent inside an iSCSI session. drobo-web speaks the same commands from Linux and
+shows the result in a browser, with history and alerts the original never had.
+
+![Dashboard](docs/screenshot-dark.png)
+
+## Features
+
+- **Front panel view**: all 8 bays with live lights (including the flashing rebuild
+  states), drive model, size and **drive temperature**, plus the blue capacity gauge.
+- **Capacity and volumes**: protected / used / free, each volume's size, target IQN and
+  host-reported usage.
+- **Status in plain words**: "Data protected", "No redundancy", relayout progress with a
+  bar, empty bays.
+- **iSCSI ports**: IP, prefix, gateway and MTU for both ports.
+- **History**: used capacity and per-drive temperature over 6 h, 24 h, 7 d or 30 d (SQLite, 90-day retention).
+- **Alerts**: drive failed, removed or inserted; health changes; redundancy lost; relayout
+  started or finished; temperature and capacity thresholds; unit unreachable. Delivered by
+  webhook (generic JSON, Discord, Slack, Teams, ntfy) and/or email.
+- **Prometheus** `/metrics` endpoint, plus a JSON API (`/api/docs`).
+- **Read-only by construction**: every SCSI command passes an allowlist (INQUIRY, MODE SENSE and the
+  vendor volume-list read). Writes are refused before they reach the kernel. It never
+  mounts or touches a volume.
+- **No build step, no CDN**: it works on an isolated storage network.
+- **Demo mode** replays a real B800i capture, so you can try it without hardware.
+
+![Failing drive scenario](docs/screenshot-failing.png)
+
+## Try it without a Drobo
+
+```bash
+pip install git+https://github.com/ddziubanski/drobo-web
+droboweb serve --demo            # healthy unit
+droboweb serve --demo failing    # bay 3 fails after 2 minutes (DROBOWEB_DEMO_SPEED=10 to hurry it)
+# open http://localhost:8080
+```
+
+Or: `docker compose --profile demo up drobo-web-demo`, then go to http://localhost:8081.
+
+## Use it with a real B800i
+
+### 1. Get an iSCSI session to the unit (on the Linux host)
+
+> **Safety first.** A Drobo volume is a plain block device without cluster locking. If
+> another server (for example the Windows box running Dashboard) has a volume mounted,
+> **this host must never mount it**. Logging in and reading status is fine; mounting isn't.
+> drobo-web never mounts anything. Install
+> [`deploy/99-drobo-no-automount.rules`](deploy/99-drobo-no-automount.rules) so desktop
+> auto-mounters stay away too.
+
+```bash
+sudo apt install open-iscsi lsscsi sg3-utils
+sudo iscsiadm -m discovery -t sendtargets -p <B800i-IP>
+```
+
+Discovery lists one target per volume (`…b800i.<serial>.id1`, `.id2`, …). If it also
+lists a target that isn't a volume, it's probably the management target. Please
+[open an issue](https://github.com/ddziubanski/drobo-web/issues) with the output either
+way (redact the serial), because this is still being worked out.
+
+Log in to **one** target. Use the management target if there is one, otherwise the
+volume least likely to be in use elsewhere:
+
+```bash
+sudo iscsiadm -m node -T <target-iqn> -p <B800i-IP>:3260 --login
+sudo iscsiadm -m node -T <target-iqn> -p <B800i-IP>:3260 -o update -n node.startup -v automatic
+```
+
+### 2. Check that drobo-web can see it
+
+```bash
+pip install git+https://github.com/ddziubanski/drobo-web
+sudo droboweb list      # shows /dev/sgN devices; the Drobo is marked "DROBO (protocol 0.11)"
+sudo droboweb status    # one-shot text status
+```
+
+### 3. Run the dashboard
+
+**Docker** (edit the device in `docker-compose.yml` first):
+
+```bash
+docker compose up -d drobo-web
+```
+
+**systemd**: see [`deploy/drobo-web.service`](deploy/drobo-web.service) and
+[`deploy/drobo-web.env`](deploy/drobo-web.env).
+
+**By hand**: `sudo droboweb serve --port 8080`
+
+Root, or `CAP_SYS_RAWIO`, is needed because the kernel only passes vendor-specific
+SCSI opcodes from processes with that capability.
+
+## Configuration
+
+Environment variables (CLI flags override them where they exist):
+
+| Variable | Default | |
+|---|---|---|
+| `DROBOWEB_DEVICE` | `auto` | `/dev/sgN`, or `auto` to probe iSCSI-attached devices |
+| `DROBOWEB_PORT` / `DROBOWEB_HOST` | `8080` / `0.0.0.0` | |
+| `DROBOWEB_POLL_SECONDS` | `10` | how often the unit is polled |
+| `DROBOWEB_SAMPLE_SECONDS` | `60` | how often a history point is stored |
+| `DROBOWEB_DB_PATH` | `droboweb.sqlite3` | history and events |
+| `DROBOWEB_RETENTION_DAYS` | `90` | |
+| `DROBOWEB_TEMP_WARN_C` | `50` | drive temperature alert |
+| `DROBOWEB_CAPACITY_WARN_PCT` | `85` | capacity alert |
+| `DROBOWEB_AUTH_USER` / `_PASSWORD` | (empty) | HTTP basic auth for the UI and API (`/healthz` stays open) |
+| `DROBOWEB_NOTIFY_MIN_SEVERITY` | `warning` | `info`, `warning` or `critical` |
+| `DROBOWEB_WEBHOOK_URL` / `_FORMAT` | (empty) / `json` | `json`, `discord`, `slack`, `teams`, `ntfy` |
+| `DROBOWEB_SMTP_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_STARTTLS`, `DROBOWEB_MAIL_FROM`, `DROBOWEB_MAIL_TO` | | email alerts |
+| `DROBOWEB_DEMO` / `DROBOWEB_DEMO_SPEED` | (empty) / `1` | `healthy` or `failing` |
+| `DROBOWEB_FIXTURE` | (empty) | replay a fixture file instead of real hardware |
+
+## CLI
+
+```
+droboweb serve   [--device /dev/sgN | --demo [healthy|failing] | --fixture FILE] [--port N]
+droboweb status  [--json] [same source options]
+droboweb list    [--all]          # which /dev/sg* devices are Drobos
+droboweb dump    [-o FILE] [--no-redact]   # raw responses, for bug reports and new fixtures
+```
+
+## Status and roadmap
+
+| | |
+|---|---|
+| ✅ | Read-only status: bays, lights, temperatures, capacity, volumes, ports, firmware, flags |
+| ✅ | History, alerts, Prometheus, demo mode |
+| ⏳ | Confirm which iSCSI target Linux should use for management (needs a discovery listing) |
+| ⏳ | Map the unknown status bits and option flags |
+| 🔜 | Settings that Dashboard can change (rename, dimming, alert email, network). This needs captures of each write, and will be opt-in and off by default |
+| 🔜 | Other models (B810i, B1200i, DroboPro, DroboElite): send a capture or a `droboweb dump` |
+
+The protocol notes are in [PROTOCOL.md](PROTOCOL.md).
+
+## Contributing a capture
+
+On Windows with Dashboard: capture the iSCSI NIC in Wireshark (`tcp port 3260`) while
+Dashboard is open, then:
+
+```bash
+python3 tools/pcap_to_fixture.py capture.pcapng -o my-unit.json   # needs tshark; redacts by default
+```
+
+On Linux: `sudo droboweb dump -o my-unit.json`.
+
+Open an issue and attach the JSON. Both tools replace the serial, IQNs, unit name and
+volume names. Check the file yourself before posting.
+
+## Credits and license
+
+GPL-3.0-or-later. Protocol groundwork from [drobo-utils](https://github.com/petersilva/drobo-utils)
+(Peter Silva and contributors, GPL-3.0). This project isn't affiliated with Drobo, Inc. or StorCentric.
+"Drobo" is used only to name the hardware this software works with.

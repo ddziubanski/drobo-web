@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drobo-web"
+version = "0.1.0"
+description = "Read-only web dashboard and monitor for the Drobo B800i (iSCSI), on Linux"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.10"
+dependencies = ["fastapi>=0.110", "uvicorn>=0.27"]
+classifiers = [
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Operating System :: POSIX :: Linux",
+  "Topic :: System :: Monitoring",
+  "Topic :: System :: Hardware",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "httpx"]
+
+[project.scripts]
+droboweb = "droboweb.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/ddziubanski/drobo-web"
+
+[tool.setuptools]
+packages = ["droboweb"]
+
+[tool.setuptools.package-data]
+droboweb = ["static/*", "fixtures/*.json"]
