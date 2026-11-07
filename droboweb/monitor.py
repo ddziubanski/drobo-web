@@ -138,7 +138,9 @@ class Monitor:
         try:
             self.usage["volumes"] = usage_mod.send(self.transport, snap.volumes, host)
         except Exception as e:  # noqa: BLE001
-            self._set_usage("error", f"The unit rejected the usage report ({e})")
+            self._set_usage("error", f"The unit rejected the usage report ({e}). If an admin password is "
+                                     "set on the Drobo, turn it off in Drobo Dashboard: drobo-web can't "
+                                     "send the password yet. Reading status works either way.")
             return
         self.usage["last_sent"] = time.time()
         self._set_usage("active")

@@ -120,6 +120,20 @@ def test_monitor_blocks_when_nothing_mounted_here():
     assert m.transport.writes == []  # would otherwise zero every volume
 
 
+def test_rejected_report_mentions_admin_password():
+    m = make_monitor()
+    snap = read_snapshot(m._open())
+    m.usage_provider = lambda: host_like_capture(snap)
+    m.poll_once()
+
+    def refuse(cdb, data):
+        raise RuntimeError("CHECK CONDITION")
+    m.transport.write = refuse
+    m._last_usage = 0
+    m._handle(m.poll_once(), None)
+    assert m.usage["status"] == "error" and "admin password" in m.usage["detail"]
+
+
 def test_monitor_off_by_default():
     m = Monitor(Config(demo="healthy", db_path=":memory:"))
     m._handle(m.poll_once(), None)

@@ -57,7 +57,9 @@ GROUPS = {
     "usage": ("Volume usage reporting",
               "Tell the Drobo how full each volume's filesystem is, as Drobo Dashboard does. This is the one "
               "write drobo-web can make, and it's off by default. It pauses itself if Dashboard's service is "
-              "running, or if none of the Drobo's volumes are mounted on this host."),
+              "running, or if none of the Drobo's volumes are mounted on this host. If an admin password is set "
+              "on the Drobo, the unit may refuse it: drobo-web can't send the password yet, so turn the "
+              "password off in Drobo Dashboard."),
     "access": ("Access", "Ask for a user name and password before showing the dashboard or the API."),
     "desktop": ("This computer", "Tray icon and notification settings for this computer."),
 }
