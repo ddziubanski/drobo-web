@@ -3,9 +3,11 @@
 Every command is checked against an allowlist before it reaches the OS:
 
 * reads: INQUIRY, MODE SENSE(6/10), and the Drobo vendor volume-list read (0xEA 10 80 81);
-* exactly one write: Dashboard's "host-reported volume usage" MODE SELECT(10) to vendor
-  subpage 0x3A/0x0C, with the exact CDB and parameter length Dashboard uses. It is only
-  sent when the user turns usage reporting on (see usage.py).
+* two writes, each only in the exact shape Drobo Dashboard sends:
+  - the "host-reported volume usage" MODE SELECT(10) to vendor subpage 0x3A/0x0C. It is only
+    sent when the user turns usage reporting on (see usage.py);
+  - Blink Lights (vendor 0xEA, subcommand 0x06, one zero data byte), which only flashes the
+    front panel. It is only sent when someone presses the Blink Lights button.
 
 DeviceTransport talks to a Linux SCSI generic device (/dev/sgN) with SG_IO.
 WinDeviceTransport (winscsi.py) does the same on Windows with SCSI pass-through.
@@ -26,6 +28,14 @@ USAGE_CDB = bytes([0x55, 0x01, 0x3A, 0x0C, 0, 0, 0, 0, 0x56, 0])
 USAGE_LEN = 0x56
 USAGE_REC = 11
 USAGE_MAX_RECORDS = (USAGE_LEN - 6) // USAGE_REC  # 7
+
+BLINK_PREFIX = bytes([0xEA, 0x10, 0x00, 0x06])
+BLINK_DATA = b"\x00"
+
+
+def blink_cdb(seq: int) -> bytes:
+    """Dashboard's Blink Lights: EA 10 00 06 <seq> 00 21 00 01, then zeros. <seq> counts up."""
+    return BLINK_PREFIX + bytes([seq & 0xFF, 0x00, 0x21, 0x00, 0x01]) + bytes(7)
 
 
 class ScsiError(Exception):
@@ -48,9 +58,15 @@ def _check_allowed(cdb: bytes) -> None:
 
 
 def _check_write_allowed(cdb: bytes, data: bytes) -> None:
-    """The only write drobo-web will ever send: Dashboard's usage report, exact shape."""
-    if bytes(cdb) != USAGE_CDB:
-        raise NotAllowed(f"refusing to write with CDB {bytes(cdb).hex()} (only the usage report is allowed)")
+    """The only writes drobo-web will ever send: Dashboard's usage report and Blink Lights, exact shapes."""
+    cdb = bytes(cdb)
+    if len(cdb) == 16 and cdb[:4] == BLINK_PREFIX and cdb == blink_cdb(cdb[4]):
+        if bytes(data) != BLINK_DATA:
+            raise NotAllowed("Blink Lights payload must be a single zero byte")
+        return
+    if cdb != USAGE_CDB:
+        raise NotAllowed(f"refusing to write with CDB {cdb.hex()} "
+                         "(only the usage report and Blink Lights are allowed)")
     if len(data) != USAGE_LEN or data[4] != 0x01 or not 0 < data[5] <= USAGE_MAX_RECORDS:
         raise NotAllowed("usage report payload has the wrong shape")
     if any(data[6 + data[5] * USAGE_REC:]):

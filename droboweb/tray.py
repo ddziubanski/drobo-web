@@ -225,6 +225,17 @@ class TrayApp:
     def open_dashboard(self, *_):
         webbrowser.open(self.url)
 
+    def blink(self, *_):
+        def run():
+            try:
+                self.monitor.blink()
+            except Exception as e:  # noqa: BLE001
+                log.warning("blink: %s", e)
+                if self.icon:
+                    self.icon.notify(str(e), "Blink Lights")
+        if self.monitor:
+            threading.Thread(target=run, name="blink", daemon=True).start()
+
     def open_settings(self, *_):
         webbrowser.open(self.url + "settings.html")
 
@@ -280,6 +291,8 @@ class TrayApp:
             M(self.status_text, None, enabled=False),
             M("Open dashboard", self.open_dashboard, default=True),
             pystray.Menu.SEPARATOR,
+            M("Blink lights", self.blink, visible=lambda _: self.cfg.blink_button,
+              enabled=lambda _: bool(self.monitor and self.monitor.reachable)),
             M("Settings…", self.open_settings),
             pystray.Menu.SEPARATOR,
             M("Notifications", self.toggle("notifications"), checked=lambda _: bool(self.store.get("notifications"))),

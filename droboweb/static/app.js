@@ -153,6 +153,7 @@
     thresholds = m.thresholds || {};
     $("ver").textContent = "v" + data.version;
     $("mode-badge").hidden = m.mode !== "demo";
+    $("blink-btn").hidden = !(data.actions && data.actions.blink);
     const banner = $("banner");
     if (!m.reachable) {
       banner.hidden = false;
@@ -240,6 +241,26 @@
       loadHistory();
     };
   }
+
+  // ---------- Blink Lights ----------
+  let blinkTimer;
+  $("blink-btn").onclick = async () => {
+    const btn = $("blink-btn"), msg = $("blink-msg");
+    btn.disabled = true; btn.textContent = "Blinking…";
+    let ok = false, text = "";
+    try {
+      const r = await fetch("api/blink", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      ok = r.ok;
+      if (!ok) { try { text = (await r.json()).detail; } catch (_) {} text = text || `error ${r.status}`; }
+    } catch (e) { text = e.message; }
+    btn.disabled = false; btn.textContent = "Blink lights";
+    msg.hidden = false;
+    msg.className = "blink-msg " + (ok ? "good" : "bad");
+    msg.textContent = ok ? "Sent. The front panel should be flashing." : `Didn't blink: ${text}`;
+    clearTimeout(blinkTimer);
+    blinkTimer = setTimeout(() => { msg.hidden = true; }, ok ? 6000 : 15000);
+    if (ok) setTimeout(loadEvents, 11000);
+  };
 
   async function j(url) { const r = await fetch(url, { cache: "no-store" }); if (!r.ok) throw new Error(r.status); return r.json(); }
   async function loadStatus() {

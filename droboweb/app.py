@@ -72,10 +72,6 @@ def create_app(cfg: Config | None = None, monitor: Monitor | None = None, start_
     def healthz():
         return {"ok": True, "reachable": mon.reachable}
 
-    @app.get("/api/status", dependencies=guard)
-    def status():
-        return {"version": __version__, "monitor": mon.state(),
-                "snapshot": mon.snapshot.to_dict() if mon.snapshot else None}
 
     @app.get("/api/history", dependencies=guard)
     def history(hours: float = 24, points: int = 300):
@@ -128,6 +124,24 @@ def create_app(cfg: Config | None = None, monitor: Monitor | None = None, start_
     def settings_body(request: Request) -> dict:
         ok, why = can_edit(request)
         return {"editable": ok, "reason": why, "mode": mon.mode, **store.describe()}
+
+    @app.get("/api/status", dependencies=guard)
+    def status(request: Request):
+        return {"version": __version__, "monitor": mon.state(),
+                "snapshot": mon.snapshot.to_dict() if mon.snapshot else None,
+                "actions": {"blink": bool(cfg.blink_button and can_edit(request)[0])}}
+
+    @app.post("/api/blink", dependencies=guard)
+    async def blink(request: Request):
+        """Flash the Drobo's front-panel lights (Drobo Dashboard's Blink Lights)."""
+        check_write(request)
+        if not cfg.blink_button:
+            raise HTTPException(403, "The Blink Lights button is turned off in Settings.")
+        try:
+            await asyncio.to_thread(mon.blink)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, str(e)) from None
+        return {"ok": True}
 
     @app.get("/api/settings", dependencies=guard)
     def get_settings(request: Request):

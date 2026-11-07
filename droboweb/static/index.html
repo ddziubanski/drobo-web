@@ -28,7 +28,8 @@
 
 <main class="grid">
   <section class="card chassis-card">
-    <div class="card-head"><h2>Front panel</h2><span class="muted" id="bay-summary"></span></div>
+    <div class="card-head"><h2>Front panel</h2><span class="head-right"><span class="muted" id="bay-summary"></span><button type="button" class="btn small" id="blink-btn" hidden title="Flash the Drobo's front-panel lights, to find it in a rack">Blink lights</button></span></div>
+    <p class="blink-msg" id="blink-msg" hidden></p>
     <div class="chassis" id="chassis" aria-label="Drive bays"></div>
     <div class="caplights" id="caplights" title="Capacity gauge"></div>
     <div class="legend">

@@ -150,6 +150,9 @@ report, or a blink duration in seconds. None of the pages drobo-web reads change
 an admin password set, and Dashboard had authenticated with 3A/14 earlier in the session; whether
 Blink Lights needs that isn't known.
 
+drobo-web sends exactly this command, with its own counter starting at 1 and a zero data byte
+(the value Dashboard's last press sent), only when someone presses its Blink Lights button.
+
 ### 3A/15: identity
 Read by Dashboard while it detects units (`5A 08 3A 15 … 31`). Payload `01 01 03 EA` and then
 the unit serial as ASCII, zero-padded. 0x03EA may be a model id.

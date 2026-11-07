@@ -44,6 +44,7 @@ class Config:
     notify_min_severity: str = "warning"  # info | warning | critical
     report_usage: bool = False      # take over Dashboard's volume-usage report (the one write)
     usage_seconds: float = 30.0     # how often to send it when enabled
+    blink_button: bool = True       # show the Blink Lights button (flashes the front panel)
     extra: dict = field(default_factory=dict)
 
     @classmethod

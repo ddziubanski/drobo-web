@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 
 from .config import Config
@@ -12,7 +13,7 @@ from . import usage as usage_mod
 from .events import Event, diff
 from .notify import Notifier
 from .protocol import Snapshot, read_snapshot
-from .scsi import ReplayTransport, Transport, open_device
+from .scsi import BLINK_DATA, ReplayTransport, Transport, blink_cdb, open_device
 from .store import Store
 
 log = logging.getLogger("droboweb.monitor")
@@ -40,6 +41,8 @@ class Monitor:
         self.listeners: list = []          # callables(event, unit) — e.g. the tray's notifications
         self._pending: list[Event] = []    # events raised from the poll thread
         self._reopen = False               # set when the device setting changes
+        self._io = threading.Lock()        # one command at a time on the device
+        self._blink_seq = 0
         # host-reported usage (the one write); injectable for tests
         self.usage_provider = usage_mod.host_usage
         self.dashboard_check = usage_mod.dashboard_service_running
@@ -91,6 +94,24 @@ class Monitor:
             self._last_prune = 0.0
 
     def poll_once(self) -> Snapshot:
+        with self._io:
+            return self._poll_locked()
+
+    def blink(self) -> None:
+        """Flash the front-panel lights, like Drobo Dashboard's Blink Lights. Raises on failure."""
+        with self._io:
+            if self.transport is None:
+                self.transport = self._open()
+            self._blink_seq = self._blink_seq % 0xFF + 1
+            try:
+                self.transport.write(blink_cdb(self._blink_seq), BLINK_DATA)
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError(f"The Drobo refused Blink Lights ({e}). If an admin password is set on "
+                                   "the Drobo, turn it off in Drobo Dashboard: drobo-web can't send the "
+                                   "password yet.") from e
+        self._pending.append(Event("info", "blink", "Blink Lights sent from drobo-web"))
+
+    def _poll_locked(self) -> Snapshot:
         if self._reopen:
             self._reopen = False
             if self.transport is not None and self.mode == "live":

@@ -28,13 +28,16 @@ shows the result in a browser, with history and alerts the original never had.
 - **Alerts**: drive failed, removed or inserted; health changes; redundancy lost; relayout
   started or finished; temperature and capacity thresholds; unit unreachable. Delivered by
   webhook (generic JSON, Discord, Slack, Teams, ntfy) and/or email.
+- **Blink Lights**: a button on the dashboard (and in the tray menu) that flashes the front
+  panel to find the unit in a rack, the same command Drobo Dashboard sends.
 - **Settings page**: alert email and webhooks (with a "send test alert" button), alert
   thresholds, polling, history retention, login, and usage reporting. Changes apply
   without a restart.
 - **Prometheus** `/metrics` endpoint, plus a JSON API (`/api/docs`).
 - **Read-only by default**: every SCSI command passes an allowlist (INQUIRY, MODE SENSE and the
-  vendor volume-list read). The one exception is the opt-in volume-usage report that
-  replaces Drobo Dashboard (see below). It never mounts or touches a volume.
+  vendor volume-list read). The only writes it can send are the opt-in volume-usage report that
+  replaces Drobo Dashboard (see below) and Blink Lights, each in the exact shape Dashboard
+  uses. It never mounts or touches a volume.
 - **Windows tray app** (`DroboWeb.exe`) that replaces Drobo's DDAssist.
 - **No build step, no CDN**: it works on an isolated storage network.
 - **Demo mode** replays a real B800i capture, so you can try it without hardware.
@@ -61,6 +64,7 @@ tray app:
   the unit's status and capacity.
 - Windows notifications for drive failures, redundancy loss, rebuilds, temperature,
   capacity and lost contact.
+- **Blink lights** in the menu flashes the front panel.
 - Click the icon to open the full dashboard (served on `http://127.0.0.1:8780`, this PC only).
 - **Settings…** opens the settings page: alert email, webhooks, thresholds, desktop
   notifications, start at login.
@@ -101,8 +105,8 @@ the tray menu (or set `DROBOWEB_REPORT_USAGE=1`). drobo-web then sends the same 
   - None of the Drobo's volumes are mounted on this host. Otherwise a monitor-only machine would
     mark every volume as unknown.
 - **Admin password:** drobo-web can't send the Drobo's admin password yet. Reading status works
-  with a password set. If the dashboard says the unit rejected the usage report, turn the admin
-  password off in Drobo Dashboard (Drobo Settings), then turn reporting back on.
+  with a password set. If the dashboard says the unit rejected the usage report or Blink Lights,
+  turn the admin password off in Drobo Dashboard (Drobo Settings), then try again.
 
 On Linux it works the same way, using `/dev/disk/by-path` and the mounted filesystems.
 
@@ -216,10 +220,11 @@ droboweb dump    [-o FILE] [--no-redact]   # raw responses, for bug reports and 
 | ✅ | History, alerts, Prometheus, demo mode |
 | ✅ | Windows tray app (DDAssist replacement); volume-usage report (Dashboard replacement), opt-in |
 | ✅ | Settings page for drobo-web's own settings (alerts, thresholds, polling, login) |
+| ✅ | Blink Lights (identify the unit) |
 | ⏳ | First run on real hardware (Windows pass-through and the usage report are built to the capture, not yet run against a unit) |
 | ⏳ | Confirm which iSCSI target Linux should use for management (needs a discovery listing) |
 | ⏳ | Map the unknown status bits and option flags |
-| 🔜 | Unit settings and actions Dashboard has (rename, network, admin password, Blink Lights). Network, admin password and Blink Lights are mapped in PROTOCOL.md; they will be opt-in and off by default |
+| 🔜 | Unit settings Dashboard can change (rename, network, admin password). Network and admin password are mapped in PROTOCOL.md; they will be opt-in and off by default |
 | 🔜 | Other models (B810i, B1200i, DroboPro, DroboElite): send a capture or a `droboweb dump` |
 
 The protocol notes are in [PROTOCOL.md](PROTOCOL.md).

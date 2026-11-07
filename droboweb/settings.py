@@ -60,6 +60,7 @@ GROUPS = {
               "running, or if none of the Drobo's volumes are mounted on this host. If an admin password is set "
               "on the Drobo, the unit may refuse it: drobo-web can't send the password yet, so turn the "
               "password off in Drobo Dashboard."),
+    "unit": ("Drobo", "Actions drobo-web can send to the unit."),
     "access": ("Access", "Ask for a user name and password before showing the dashboard or the API."),
     "desktop": ("This computer", "Tray icon and notification settings for this computer."),
 }
@@ -94,6 +95,9 @@ FIELDS: tuple[Field, ...] = (
     Field("retention_days", "Keep history for", "monitoring", "int", min=1, max=3650, unit="days"),
     Field("report_usage", "Report volume usage to the Drobo", "usage", "bool"),
     Field("usage_seconds", "Report every", "usage", "float", min=5, max=3600, unit="s"),
+    Field("blink_button", "Blink Lights button", "unit", "bool",
+          help="Show a button on the dashboard (and in the tray menu) that flashes the Drobo's front "
+               "panel, to find it in a rack. The button needs the same access as changing settings."),
     Field("auth_user", "User name", "access", help="Leave empty for no login."),
     Field("auth_password", "Password", "access", "password"),
 )

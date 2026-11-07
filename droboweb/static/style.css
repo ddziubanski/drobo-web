@@ -243,3 +243,10 @@ a.icon-btn { color: var(--text); text-decoration: none; }
 }
 .savebar[hidden] { display: none; }
 .icon-btn { flex: none; }
+
+/* ---------- Blink Lights ---------- */
+.head-right { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.blink-msg { margin: -4px 0 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; background: var(--info-bg); }
+.blink-msg.good { background: var(--ok-bg); } .blink-msg.bad { background: var(--crit-bg); }
+.blink-msg[hidden] { display: none; }
+.card-head h2 { white-space: nowrap; }
