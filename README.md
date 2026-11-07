@@ -7,6 +7,12 @@ The B800i has no web interface or management IP: Dashboard manages it with vendo
 commands sent inside an iSCSI session. drobo-web speaks the same commands from Linux and
 shows the result in a browser, with history and alerts the original never had.
 
+> **Which Drobos this is for.** drobo-web talks to the **B800i over its iSCSI ports**: every
+> command travels inside an iSCSI session to the unit (TCP 3260), the same way Drobo Dashboard
+> manages it. It doesn't work with the Ethernet NAS models that have their own management IP
+> and file sharing (Drobo 5N, 5N2, B810n), or with USB, Thunderbolt or FireWire Drobos. Other
+> iSCSI models (B810i, B1200i, DroboPro, DroboElite) may work but are untested; see the roadmap.
+
 ![Dashboard](docs/screenshot-dark.png)
 
 ## Features
